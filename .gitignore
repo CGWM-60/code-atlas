@@ -1,0 +1,7 @@
+/target
+/frontend/node_modules
+/frontend/dist
+/.code-atlas
+/*.sqlite
+/graphify-out
+/.playwright-cli

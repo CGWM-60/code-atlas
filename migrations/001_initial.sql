@@ -1,0 +1,12 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, root TEXT NOT NULL UNIQUE, name TEXT NOT NULL, updated_at INTEGER NOT NULL, graph_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS files (project_id TEXT NOT NULL, path TEXT NOT NULL, hash TEXT NOT NULL, language TEXT NOT NULL, size INTEGER NOT NULL, PRIMARY KEY(project_id,path), FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS nodes (project_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, path TEXT, json TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS edges (project_id TEXT NOT NULL, id TEXT NOT NULL, source_id TEXT NOT NULL, target_id TEXT NOT NULL, relation TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(project_id,id), FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS imports (project_id TEXT NOT NULL, source_path TEXT NOT NULL, line INTEGER NOT NULL, json TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS modules (project_id TEXT NOT NULL, module_path TEXT NOT NULL, json TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS analysis_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER NOT NULL, analyzed_files INTEGER NOT NULL, reused_files INTEGER NOT NULL, status TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(project_id,name);
+CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(project_id,kind);
+CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(project_id,source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(project_id,target_id);

@@ -1,0 +1,38 @@
+[package]
+name = "code-atlas"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+doctest = false
+
+[dependencies]
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+axum = { version = "0.8.9", features = ["ws", "json"] }
+cargo_metadata = "0.23.1"
+futures-util = "0.3.34"
+ignore = "0.4.33"
+notify = "8.2.0"
+regex = "1.13.1"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["full"] }
+tower-http = { version = "0.7.0", features = ["cors", "fs", "trace"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+tree-sitter = "0.26.13"
+tree-sitter-go = "0.25.0"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-php = "0.24.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-typescript = "0.23.2"
+uuid = { version = "1.26.0", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tower = { version = "0.5.3", features = ["util"] }
