@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { api, errorMessage, projectApi } from "./services/api";
+import { useEffect, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { AtlasEdge, AtlasNode } from "./graphView";
@@ -32,7 +33,9 @@ export function EvidenceCodeInspector({
   details,
   finding,
   onClose,
+  projectId,
 }: {
+  projectId?: string;
   details: SourceDetails;
   finding?: EvidenceFinding;
   onClose: () => void;
@@ -44,7 +47,19 @@ export function EvidenceCodeInspector({
       ? [finding.primary_span]
       : [];
   const selected = spans[index];
-  const offset = (details.node.start_line ?? 1) - 1;
+  const [loaded, setLoaded] = useState<SourceDetails | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const needsFile = selected && (selected.path !== details.node.path || selected.start_line < (details.node.start_line ?? 1) || selected.end_line > (details.node.end_line ?? 0));
+  useEffect(() => {
+    setLoaded(null); setError("");
+    if (!needsFile || !projectId || !selected) { setBusy(false); return; }
+    const controller = new AbortController(); setBusy(true);
+    api<SourceDetails>(`${projectApi(projectId)}/source?path=${encodeURIComponent(selected.path)}`, { signal: controller.signal }).then(setLoaded).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); }).finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    return () => controller.abort();
+  }, [projectId, selected?.path, selected?.start_line, selected?.end_line, details, needsFile]);
+  const displayed = loaded ?? details;
+  const offset = (displayed.node.start_line ?? 1) - 1;
   const relative = (line: number) => Math.max(1, line - offset);
   const onMount: OnMount = (editor, monaco) => {
     if (!selected) return;
@@ -128,15 +143,17 @@ export function EvidenceCodeInspector({
             )}
           </div>
         )}
+        {busy && <p role="status">Chargement de la source de cette étape…</p>}
+        {error && <p role="alert">{error}</p>}
         <div className="code-inspector-layout">
           <div className="source-editor">
             <Editor
-              key={(finding?.id ?? "source") + ":" + index}
+              key={(finding?.id ?? "source") + ":" + index + ":" + (loaded?.node.path ?? "initial")}
               height="100%"
               theme="vs-dark"
-              language={(details.node.language ?? "text").toLowerCase()}
+              language={(displayed.node.language ?? "text").toLowerCase()}
               value={
-                details.source ??
+                (busy || error ? "" : displayed.source) ??
                 "// Aucun code source disponible pour ce nœud."
               }
               onMount={onMount}

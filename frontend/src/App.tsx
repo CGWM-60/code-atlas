@@ -1,3 +1,14 @@
+import type { Details, DirectoryListing, AiProvider, AiSettings, Page, ProjectSummary, ProgressState, ScoreFactor, RealUsage, AiFunctionParameter, AiFunctionDocumentation, LibraryEntry, LibraryCandidate, MyCodeItem, Finding, ProjectDocumentation, FeatureMembership, Feature, FeatureSpec, FeatureSnippet, FeatureLibraryEntry, ProjectDashboard, GeneratedFile, McpStatus } from "./types/contracts";
+export type { Details, DirectoryListing, AiProvider, AiSettings, Page, ProjectSummary, ProgressState, ScoreFactor, RealUsage, AiFunctionParameter, AiFunctionDocumentation, LibraryEntry, LibraryCandidate, MyCodeItem, Finding, ProjectDocumentation, FeatureMembership, Feature, FeatureSpec, FeatureSnippet, FeatureLibraryEntry, ProjectDashboard, GeneratedFile, McpStatus } from "./types/contracts";
+import { McpPage, ProjectsPage, MyCodePage, FindingsPage, DocsPage } from "./pages/KnowledgePages";
+export { MyCodePage, FindingsPage, DocsPage } from "./pages/KnowledgePages";
+import { HybridSearchPage } from "./pages/HybridSearchPage";
+import { AssistantPanel } from "./features/assistant/AssistantPanel";
+import { CommandPalette } from "./features/assistant/CommandPalette";
+import type { UiAction } from "./features/assistant/types";
+import { dispatchUiAction } from "./state/uiActions";
+import { api, projectApi } from "./services/api";
+import { TestsPage, EstimatePage, GitPage } from "./pages/IntelligencePages";
 import { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import {
@@ -64,280 +75,6 @@ import {
   type SourceDetails,
   type SourceSpan,
 } from "./EvidenceCodeInspector";
-
-type Details = {
-  node: AtlasNode;
-  incoming: AtlasEdge[];
-  outgoing: AtlasEdge[];
-  source?: string;
-};
-type DirectoryListing = {
-  current: string;
-  parent?: string;
-  directories: { name: string; path: string }[];
-};
-type AiProvider = "openai" | "mistral" | "openrouter";
-type AiSettings = { provider: AiProvider; apiKey: string; model: string };
-type Page =
-  | "projects"
-  | "map"
-  | "flow"
-  | "search"
-  | "features"
-  | "my-code"
-  | "library"
-  | "api"
-  | "docs"
-  | "quality"
-  | "security"
-  | "mcp";
-type ProjectSummary = {
-  id: string;
-  root: string;
-  name: string;
-  updated_at: number;
-  last_analyzed_at: number;
-  languages: string[];
-  file_count: number;
-  unresolved_count: number;
-  analysis_status: string;
-  node_count: number;
-  edge_count: number;
-  git_remote?: string;
-  git_branch?: string;
-};
-type ProgressState = {
-  project_id?: string;
-  stage: string;
-  processed: number;
-  total: number;
-  nodes: number;
-  edges: number;
-  current_file?: string;
-  elapsed_ms: number;
-  unresolved?: number;
-};
-type ScoreFactor = { label: string; points: number };
-type RealUsage = {
-  caller: string;
-  path: string;
-  line?: number;
-  snippet?: string;
-};
-type AiFunctionParameter = {
-  name: string;
-  type: string | null;
-  description: string;
-};
-type AiFunctionDocumentation = {
-  summary: string;
-  purpose: string;
-  parameters: AiFunctionParameter[];
-  returns: { type: string | null; description: string };
-  errors: string[];
-  side_effects: string[];
-  use_cases: string[];
-  limitations: string[];
-  security_notes: string[];
-  tags: string[];
-  category: string | null;
-};
-export type LibraryEntry = {
-  id: string;
-  display_name: string;
-  language: string;
-  category: string;
-  tags: string[];
-  description: string;
-  source_project_id: string;
-  source_node_id: string;
-  source_path: string;
-  start_line?: number;
-  end_line?: number;
-  source_hash: string;
-  source_scope: string;
-  source_repository?: string;
-  source_version?: string;
-  source_branch?: string;
-  source_license?: string;
-  recipe_id?: string;
-  reuse_score: number;
-  knowledge_value: number;
-  real_usages: RealUsage[];
-  calls: string[];
-  dependencies: string[];
-  tests: RealUsage[];
-  source_code: string;
-  documentation_status: "not_generated" | "generating" | "generated" | "failed";
-  documentation_provider?: string;
-  documentation_model?: string;
-  documentation_generated_at?: number;
-  documentation_error?: string;
-  documentation?: AiFunctionDocumentation;
-  created_at: number;
-  updated_at: number;
-};
-type LibraryCandidate = {
-  node: AtlasNode;
-  reuse_score: number;
-  knowledge_value: number;
-  reasons: string[];
-  reuse_breakdown: ScoreFactor[];
-  knowledge_breakdown: ScoreFactor[];
-  real_usages: RealUsage[];
-  source: string;
-  signature: string;
-  parameters: string[];
-  return_type?: string;
-  calls: string[];
-  dependencies: string[];
-  tests: RealUsage[];
-  side_effects: string[];
-  loc: number;
-  complexity: number;
-};
-type MyCodeItem = {
-  node: AtlasNode;
-  incoming_usages: number;
-  outgoing_dependencies: number;
-  tests: number;
-  complexity?: number;
-  coupling: number;
-  reuse_score?: number;
-  knowledge_value?: number;
-  library_status: "saved" | "candidate" | "not_eligible";
-};
-type Finding = {
-  id: string;
-  category: "quality" | "architecture" | "performance" | "security";
-  severity: "info" | "low" | "medium" | "high" | "critical";
-  title: string;
-  description: string;
-  evidence: string[];
-  node_ids: string[];
-  path?: string;
-  start_line?: number;
-  end_line?: number;
-  primary_span?: SourceSpan;
-  evidence_spans?: SourceSpan[];
-  detector: string;
-  confidence: number;
-  status: "open" | "accepted" | "ignored" | "fixed" | "false_positive";
-  ai_analysis?: string;
-};
-type ProjectDocumentation = {
-  project_name: string;
-  overview: string;
-  purpose: string;
-  architecture: string[];
-  applications: string[];
-  entry_points: string[];
-  features: string[];
-  domains: string[];
-  main_flows: string[];
-  modules: string[];
-  apis: string[];
-  data_model: string[];
-  external_services: string[];
-  workers: string[];
-  events: string[];
-  configuration: string[];
-  security_notes: string[];
-  development: string[];
-  deployment: string[];
-  known_limitations: string[];
-  content_hash: string;
-  cache_hit: boolean;
-  updated_at: number;
-};
-type FeatureMembership = {
-  node_id: string;
-  confidence: number;
-  reason: string;
-  source: "deterministic" | "ai" | "user";
-  optional: boolean;
-  external_dependency: boolean;
-};
-type Feature = {
-  id: string;
-  project_id: string;
-  name: string;
-  description: string;
-  confidence: number;
-  completeness?: number;
-  missing_signals?: string[];
-  status: "detected" | "accepted" | "edited" | "ignored";
-  entry_point_node_ids: string[];
-  node_ids: string[];
-  edge_ids: string[];
-  memberships?: FeatureMembership[];
-  routes: string[];
-  pages: string[];
-  services: string[];
-  repositories: string[];
-  models: string[];
-  entities: string[];
-  templates: string[];
-  tests: string[];
-  external_services: string[];
-  source_hash: string;
-};
-type FeatureSpec = {
-  name: string;
-  description: string;
-  actors: string[];
-  entry_points: string[];
-  inputs: string[];
-  outputs: string[];
-  business_rules: string[];
-  operations: string[];
-  data: string[];
-  side_effects: string[];
-  security: string[];
-  error_cases: string[];
-  acceptance_criteria: string[];
-  dependencies: string[];
-  provenance: string;
-};
-type FeatureSnippet = FeatureSourceSnippet;
-type FeatureLibraryEntry = {
-  id: string;
-  source_feature_id: string;
-  source_project_id: string;
-  name: string;
-  languages: string[];
-  frameworks: string[];
-  source_hash: string;
-  spec: FeatureSpec;
-  documentation: string;
-  acceptance_criteria: string[];
-  security_notes: string[];
-  architecture_summary: string;
-  created_at: number;
-  updated_at: number;
-};
-type ProjectDashboard = {
-  architecture: { zones: number; entry_points: number };
-  features: { detected: number; accepted: number };
-  my_code: { functions: number; classes: number; services: number };
-  quality: { critical: number; high: number; medium: number };
-  security: { high: number; medium: number };
-  documentation: { current: boolean };
-  library: { functions: number; features: number };
-};
-type GeneratedFile = { path: string; content: string; is_test: boolean };
-type McpStatus = {
-  status: string;
-  transport: string;
-  protocol_version: string;
-  server_version: string;
-  database: string;
-  registered_projects: number;
-  tool_count: number;
-  tools: string[];
-  command: string;
-  checked_at: number;
-};
 
 const AI_STORAGE_KEY = "code-atlas.ai-settings.v1";
 const SYMBOL_KINDS = new Set([
@@ -533,6 +270,55 @@ export default function App() {
     finding?: EvidenceFinding;
   } | null>(null);
   const [flowSeed, setFlowSeed] = useState("");
+  const [assistantOpen, setAssistantOpen] = useState(true);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [testSeed, setTestSeed] = useState("");
+  const [estimateSeed, setEstimateSeed] = useState("");
+  const [apiSeed, setApiSeed] = useState("");
+  const [featureView, setFeatureView] = useState<"overview" | "code" | "map">("overview");
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setPaletteOpen(value => !value); }
+      if (event.key === "Escape") { setCodeInspector(null); setSelectedFeature(null); setPaletteOpen(false); }
+    };
+    window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener);
+  }, []);
+  async function navigatePage(destination: string) {
+    const pages = ["projects", "map", "flow", "search", "features", "my-code", "library", "api", "docs", "quality", "security", "tests", "estimate", "git", "mcp"];
+    if (!pages.includes(destination)) throw new Error("Page inconnue");
+    setCodeInspector(null); setSelectedFeature(null); setPage(destination as Page);
+    if (destination === "security" || destination === "quality") await refreshFindings(destination);
+    if (destination === "docs") await refreshDocs();
+    if (destination === "features") await refreshFeatures();
+    if (destination === "my-code") await refreshMyCode();
+    if (destination === "library") await refreshLibrary();
+  }
+  async function handleUiAction(action: UiAction) {
+    return dispatchUiAction(action, {
+      navigate: navigatePage,
+      node: async (id, mode, range) => {
+        const details = await api<SourceDetails>(`${projectApi(projectId)}/nodes/${encodeURIComponent(id)}`);
+        setSelectedId(id); setSelected(details); setSelectedFeature(null);
+        if (mode === "source") {
+          setCodeInspector({ details, finding: range ? { id: `assistant:${id}`, title: details.node.name, description: "Source citée par l’assistant", severity: "info", primary_span: { path: details.node.path ?? "", start_line: range[0], end_line: range[1], start_column: 1, end_column: 1 } } : undefined });
+        } else {
+          setCodeInspector(null); setPage("map"); await loadVisibleView("Symbols", id); setFocusMode(true);
+          if (mode === "impact") { setImpact(await api(`${projectApi(projectId)}/impact/${encodeURIComponent(id)}?depth=4`)); setTab("impact"); }
+          centerNode(id);
+        }
+      },
+      file: async path => { const details = await api<SourceDetails>(`${projectApi(projectId)}/source?path=${encodeURIComponent(path)}`); setCodeInspector({ details }); },
+      feature: async (id, view) => { const data = await api<{ feature: Feature }>(`${projectApi(projectId)}/features/${encodeURIComponent(id)}`); setCodeInspector(null); setFeatureView(view === "source" ? "code" : view === "graph" ? "map" : "overview"); setPage("features"); await openFeature(data.feature); },
+      finding: async id => { const all = [...qualityFindings, ...securityFindings]; let finding = all.find(f => f.id === id); if (!finding) { const values = await Promise.all([api<{ items: Finding[] }>(`${projectApi(projectId)}/security`), api<{ items: Finding[] }>(`${projectApi(projectId)}/quality`)]); finding = values.flatMap(v => v.items).find(f => f.id === id); } if (!finding) throw new Error("Constat introuvable"); await inspectFinding(finding); },
+      flow: id => { setCodeInspector(null); setSelectedFeature(null); setFlowSeed(id); setPage("flow"); },
+      api: async id => { setCodeInspector(null); setSelectedFeature(null); setApiSeed(id ?? ""); setPage("api"); },
+      library: async id => { const entry = await api<LibraryEntry>(`/api/library/${encodeURIComponent(id)}`); setCodeInspector(null); setPage("library"); await openLibraryEntry(entry); },
+      fit: () => { setPage("map"); void flow?.fitView({ padding: .2 }); },
+      filter: kinds => { setEnabledKinds(new Set(kinds)); setPage("map"); },
+      tests: feature => { setCodeInspector(null); setSelectedFeature(null); setTestSeed(feature ?? ""); setPage("tests"); },
+      estimate: task => { setCodeInspector(null); setSelectedFeature(null); setEstimateSeed(task); setPage("estimate"); },
+    });
+  }
 
   async function refreshProjects() {
     const response = await fetch("/api/projects");
@@ -784,6 +570,7 @@ export default function App() {
     setFocusMode(false);
     setSelected(null);
     setSelectedId(null);
+    setSelectedFeature(null); setCodeInspector(null); setFeatures([]); setTestSeed(""); setEstimateSeed(""); setApiSeed("");
     setPage("map");
     setLayoutVersion((value) => value + 1);
     const candidateResponse = await fetch(
@@ -1238,7 +1025,7 @@ export default function App() {
     );
 
   return (
-    <main className="shell">
+    <main className={"shell" + (assistantOpen && projectId ? " with-assistant" : "")}>
       <header>
         <div className="brand">
           <div className="logo">
@@ -1249,7 +1036,7 @@ export default function App() {
             <span>Intelligence projet</span>
           </div>
         </div>
-        <nav className="main-nav">
+        <nav className="main-nav" aria-label="Navigation principale">
           <button
             className={page === "projects" ? "active" : ""}
             onClick={() => setPage("projects")}
@@ -1349,7 +1136,10 @@ export default function App() {
           >
             MCP
           </button>
+          {([['tests', 'Tests'], ['estimate', 'Estimation'], ['git', 'Git']] as const).map(([destination, label]) => <button key={destination} disabled={!projectId} className={page === destination ? "active" : ""} onClick={() => setPage(destination)}>{label}</button>)}
         </nav>
+        <button onClick={() => setPaletteOpen(true)} aria-label="Palette de commandes">⌘ K</button>
+        <button disabled={!projectId} onClick={() => setAssistantOpen(value => !value)} aria-expanded={assistantOpen}>Assistant</button>
         <div className="project-input">
           <button
             className="browse-button"
@@ -1386,6 +1176,12 @@ export default function App() {
         </div>
       </header>
       {isAnalyzing && progress && <AnalysisProgressBar progress={progress} />}
+      {projectId && <div className="workspace-breadcrumb"><b>{projects.find(p => p.id === projectId)?.name ?? projectId}</b><span>{projects.find(p => p.id === projectId)?.git_branch ?? "Local"}</span><span>{page}</span>{selectedId && <code>{selected?.node.name}</code>}</div>}
+      {page === "tests" && projectId && <TestsPage key={"TestsPage:" + projectId} projectId={projectId} features={features} seed={testSeed} onInspect={id => void inspectCode(id)} />}
+      {page === "estimate" && projectId && <EstimatePage key={"EstimatePage:" + projectId} projectId={projectId} seed={estimateSeed} onInspect={id => void inspectCode(id)} />}
+      {page === "git" && projectId && <GitPage key={"GitPage:" + projectId} projectId={projectId} onInspect={id => void inspectCode(id)} />}
+      {assistantOpen && projectId && <AssistantPanel key={"AssistantPanel:" + projectId} projectId={projectId} projectName={projects.find(p => p.id === projectId)?.name ?? "Projet"} context={{ active_page: page, selected_node: selectedId ?? undefined, selected_feature: selectedFeature?.id, selected_file: codeInspector?.details.node.path }} configuration={aiSettings.apiKey ? { provider: aiSettings.provider, api_key: aiSettings.apiKey, model: aiSettings.model } : undefined} onAction={handleUiAction} onClose={() => setAssistantOpen(false)} />}
+      {paletteOpen && <CommandPalette projectId={projectId} projects={projects} features={features} onProject={id => void loadProject(id)} onAction={handleUiAction} onAssistant={() => setAssistantOpen(true)} onClose={() => setPaletteOpen(false)} />}
       {page === "projects" && (
         <ProjectsPage
           projects={projects}
@@ -1435,6 +1231,7 @@ export default function App() {
       )}
       {page === "api" && projectId && (
         <ApiPage
+          seed={apiSeed}
           projectId={projectId}
           onInspect={(id) => void inspectCode(id)}
           onTrace={(id) => {
@@ -1485,17 +1282,7 @@ export default function App() {
           }
         />
       )}
-      {page === "search" && fullGraph && (
-        <SearchPage
-          query={query}
-          setQuery={setQuery}
-          results={searchResults}
-          onNavigate={(id) => {
-            setPage("map");
-            void navigateTo(id);
-          }}
-        />
-      )}
+      {page === "search" && projectId && <HybridSearchPage key={"HybridSearchPage:" + projectId} projectId={projectId} onInspect={id => void inspectCode(id)} onFocus={id => { setPage("map"); void navigateTo(id); }} />}
       {page === "map" && (
         <section className="workspace">
           <aside className="explorer">
@@ -1867,6 +1654,7 @@ export default function App() {
       )}
       {selectedFeature && (
         <FeatureDetail
+          initialTab={featureView}
           feature={selectedFeature}
           spec={featureSpec}
           snippets={featureCode}
@@ -1903,6 +1691,7 @@ export default function App() {
       )}{" "}
       {codeInspector && (
         <EvidenceCodeInspector
+          projectId={projectId}
           details={codeInspector.details}
           finding={codeInspector.finding}
           onClose={() => setCodeInspector(null)}
@@ -1958,127 +1747,6 @@ function AnalysisProgressBar({ progress }: { progress: ProgressState }) {
     </div>
   );
 }
-function McpPage() {
-  const [value, setValue] = useState<McpStatus | null>(null);
-  const [error, setError] = useState("");
-  async function refresh() {
-    try {
-      const response = await fetch("/api/mcp/status");
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error ?? "Diagnostic MCP indisponible");
-      setValue(data);
-      setError("");
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Diagnostic MCP indisponible",
-      );
-    }
-  }
-  useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return (
-    <section className="page-view mcp-page">
-      <div className="page-heading">
-        <div>
-          <span>Model Context Protocol · diagnostic toutes les 5 secondes</span>
-          <h1>État du serveur MCP</h1>
-          <p>
-            Le serveur MCP expose les connaissances persistées de Code Atlas aux
-            clients compatibles, en lecture seule.
-          </p>
-        </div>
-        <button onClick={() => void refresh()}>
-          <RefreshCw size={14} />
-          Vérifier maintenant
-        </button>
-      </div>
-      {error && (
-        <div className="documentation-error">
-          <b>Erreur MCP</b>
-          <span>{error}</span>
-        </div>
-      )}
-      {value && (
-        <>
-          <div className="mcp-status-grid">
-            <b className={value.status === "operational" ? "ok" : ""}>
-              Serveur{" "}
-              <span>
-                {value.status === "operational" ? "Opérationnel" : value.status}
-              </span>
-            </b>
-            <b>
-              Transport <span>{value.transport}</span>
-            </b>
-            <b>
-              Protocole <span>{value.protocol_version}</span>
-            </b>
-            <b>
-              Base <span>{value.database}</span>
-            </b>
-            <b>
-              Projets <span>{value.registered_projects}</span>
-            </b>
-            <b>
-              Outils <span>{value.tool_count}</span>
-            </b>
-          </div>
-          <article className="mcp-guide">
-            <h2>Comment l’utiliser</h2>
-            <p>
-              Lance Code Atlas comme serveur MCP stdio avec la même base SQLite
-              que l’application :
-            </p>
-            <pre>{value.command}</pre>
-            <p>
-              Dans ton client MCP, configure cette commande comme serveur local.
-              Le client envoie ensuite <code>initialize</code>, puis{" "}
-              <code>tools/list</code> et <code>tools/call</code>. Aucun outil
-              MCP n’accepte un chemin arbitraire : il faut utiliser un
-              identifiant de projet enregistré.
-            </p>
-            <h3>Exemple de configuration</h3>
-            <pre>
-              {JSON.stringify(
-                {
-                  mcpServers: {
-                    "code-atlas": {
-                      command: "/chemin/vers/code-atlas",
-                      args: ["mcp", "--db", "/chemin/vers/code-atlas.sqlite"],
-                    },
-                  },
-                },
-                null,
-                2,
-              )}
-            </pre>
-            <h3>Contrôle en temps réel</h3>
-            <p>
-              Dernière vérification :{" "}
-              {new Date(value.checked_at * 1000).toLocaleString("fr-FR")}. Ce
-              contrôle interroge le même registre SQLite et le même catalogue
-              d’outils que le serveur stdio.
-            </p>
-          </article>
-          <article className="mcp-tools">
-            <h2>Outils disponibles</h2>
-            <div>
-              {value.tools.map((tool) => (
-                <code key={tool}>{tool}</code>
-              ))}
-            </div>
-          </article>
-        </>
-      )}
-    </section>
-  );
-}
 function ProjectDashboardStrip({ value }: { value: ProjectDashboard }) {
   return (
     <aside className="dashboard-strip">
@@ -2124,135 +1792,6 @@ function ProjectDashboardStrip({ value }: { value: ProjectDashboard }) {
         </span>
       </b>
     </aside>
-  );
-}
-function ProjectsPage({
-  projects,
-  onOpen,
-  onAnalyze,
-  onDelete,
-  onAdd,
-}: {
-  projects: ProjectSummary[];
-  onOpen: (id: string) => void;
-  onAnalyze: (root: string) => void;
-  onDelete: (id: string) => void;
-  onAdd: () => void;
-}) {
-  return (
-    <section className="page-view">
-      <div className="page-heading">
-        <div>
-          <span>Project Registry</span>
-          <h1>Your Projects</h1>
-          <p>
-            Open the latest saved graph immediately or run an incremental
-            analysis.
-          </p>
-        </div>
-        <button className="primary page-cta" onClick={onAdd}>
-          <Plus size={15} />
-          Analyze another project
-        </button>
-      </div>
-      <div className="project-grid">
-        {projects.map((project) => (
-          <article className="project-card" key={project.id}>
-            <div>
-              <span>{project.analysis_status}</span>
-              <h2>{project.name}</h2>
-              <code>{project.root}</code>
-            </div>
-            <p>{project.languages?.join(" · ") || "Languages unavailable"}</p>
-            <div className="project-metrics">
-              <b>
-                {project.node_count.toLocaleString()}
-                <small>Nodes</small>
-              </b>
-              <b>
-                {project.edge_count.toLocaleString()}
-                <small>Relations</small>
-              </b>
-              <b>
-                {project.file_count.toLocaleString()}
-                <small>Files</small>
-              </b>
-              <b>
-                {project.unresolved_count.toLocaleString()}
-                <small>Unresolved</small>
-              </b>
-            </div>
-            <time>
-              Last analysis:{" "}
-              {new Date(project.last_analyzed_at * 1000).toLocaleString()}
-            </time>
-            <div className="card-actions">
-              <button onClick={() => onOpen(project.id)}>Open</button>
-              <button onClick={() => onAnalyze(project.root)}>
-                <RefreshCw size={13} />
-                Re-analyze
-              </button>
-              <button className="danger" onClick={() => onDelete(project.id)}>
-                <Trash2 size={13} />
-              </button>
-            </div>
-          </article>
-        ))}
-        {projects.length === 0 && (
-          <div className="empty-card">
-            <FolderOpen size={35} />
-            <h2>No saved projects yet</h2>
-            <button onClick={onAdd}>Analyze your first project</button>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-function SearchPage({
-  query,
-  setQuery,
-  results,
-  onNavigate,
-}: {
-  query: string;
-  setQuery: (value: string) => void;
-  results: AtlasNode[];
-  onNavigate: (id: string) => void;
-}) {
-  return (
-    <section className="page-view narrow">
-      <div className="page-heading">
-        <div>
-          <span>Graph navigation</span>
-          <h1>Search the full project</h1>
-          <p>
-            Results open as a focused neighborhood instead of rendering the
-            entire graph.
-          </p>
-        </div>
-      </div>
-      <div className="global-search">
-        <Search size={18} />
-        <input
-          autoFocus
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Function, route, service, file…"
-        />
-      </div>
-      <div className="global-results">
-        {results.map((node) => (
-          <button key={node.id} onClick={() => onNavigate(node.id)}>
-            <span style={{ background: color[node.kind] ?? "#8b949e" }} />
-            <b>{node.name}</b>
-            <em>{node.kind}</em>
-            <code>{node.path ?? "virtual node"}</code>
-            <ChevronRight size={15} />
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 export function FeaturesPage({
@@ -2346,7 +1885,9 @@ export function FeatureDetail({
   onSave,
   onRename,
   onUpdated,
+  initialTab = "overview",
 }: {
+  initialTab?: "overview" | "code" | "map";
   feature: Feature;
   spec: FeatureSpec | null;
   snippets: FeatureSnippet[];
@@ -2370,7 +1911,8 @@ export function FeatureDetail({
     | "security"
     | "ai"
     | "port"
-  >("overview");
+  >(initialTab);
+  useEffect(() => setTab(initialTab), [initialTab, feature.id]);
   const [memberNodeId, setMemberNodeId] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
   const [memberHits, setMemberHits] = useState<AtlasNode[]>([]);
@@ -3128,327 +2670,6 @@ export function FeatureDetail({
         </div>
       </section>
     </div>
-  );
-}
-export function MyCodePage({
-  items,
-  kind,
-  onKind,
-  onInspect,
-  onExplain,
-  onImpact,
-  onAdd,
-}: {
-  items: MyCodeItem[];
-  kind: string;
-  onKind: (value: string) => void;
-  onInspect: (id: string) => void;
-  onExplain: (id: string) => void;
-  onImpact: (id: string) => void;
-  onAdd: (id: string) => void;
-}) {
-  const filters = [
-    ["functions", "Fonctions"],
-    ["methods", "Méthodes"],
-    ["classes", "Classes"],
-    ["service", "Services"],
-    ["component", "Composants"],
-    ["provider", "Providers"],
-    ["route", "Routes"],
-    ["candidates", "Candidats"],
-    ["recently_modified", "Modifiés récemment"],
-    ["untested", "Sans test"],
-    ["complex", "Complexes"],
-    ["high_coupling", "Fort couplage"],
-    ["all", "Tout"],
-  ];
-  return (
-    <section className="page-view">
-      <div className="page-heading">
-        <div>
-          <span>Code propriétaire</span>
-          <h1>Mon code</h1>
-          <p>
-            Uniquement le code du projet et du workspace. Les dépendances et
-            sources générées sont exclues.
-          </p>
-        </div>
-      </div>
-      <div className="my-code-filters">
-        {filters.map(([value, label]) => (
-          <button
-            className={kind === value ? "active" : ""}
-            key={value}
-            onClick={() => onKind(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="my-code-list">
-        {items.map((item) => (
-          <article key={item.node.id}>
-            <div>
-              <span>
-                {item.node.kind} · {item.node.language ?? "Inconnu"}
-              </span>
-              <h2>{item.node.name}</h2>
-              <code>
-                {item.node.path}:{item.node.start_line ?? "—"}–
-                {item.node.end_line ?? "—"}
-              </code>
-            </div>
-            <div className="my-code-metrics">
-              <b>
-                {item.incoming_usages}
-                <small>Appelants</small>
-              </b>
-              <b>
-                {item.outgoing_dependencies}
-                <small>Dépendances</small>
-              </b>
-              <b>
-                {item.complexity ?? "—"}
-                <small>Complexité</small>
-              </b>
-              <b>
-                {item.tests}
-                <small>Tests</small>
-              </b>
-              <b>
-                {item.reuse_score ?? "—"}
-                <small>Réemploi</small>
-              </b>
-              <b>
-                {item.knowledge_value ?? "—"}
-                <small>Connaissance</small>
-              </b>
-            </div>
-            <div className="card-actions">
-              <button onClick={() => onInspect(item.node.id)}>
-                Voir le code
-              </button>
-              <button onClick={() => onExplain(item.node.id)}>
-                <Sparkles size={13} />
-                Expliquer
-              </button>
-              <button onClick={() => onImpact(item.node.id)}>Impact</button>
-              {item.library_status === "candidate" && (
-                <button onClick={() => onAdd(item.node.id)}>
-                  <BookOpen size={13} />
-                  Ajouter à la bibliothèque
-                </button>
-              )}
-              <span className={`library-status ${item.library_status}`}>
-                {item.library_status.replace("_", " ")}
-              </span>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-export function FindingsPage({
-  title,
-  description,
-  items,
-  onInspect,
-  onStatus,
-  onExplain,
-  onReview,
-}: {
-  title: string;
-  description: string;
-  items: Finding[];
-  onInspect: (finding: Finding) => void;
-  onStatus: (finding: Finding, status: Finding["status"]) => void;
-  onExplain: (finding: Finding) => void;
-  onReview?: () => void;
-}) {
-  const counts = items.reduce<Record<string, number>>(
-    (result, item) => ({
-      ...result,
-      [item.severity]: (result[item.severity] ?? 0) + 1,
-    }),
-    {},
-  );
-  const severityLabels: Record<string, string> = {
-    critical: "critique",
-    high: "élevé",
-    medium: "moyen",
-    low: "faible",
-    info: "info",
-  };
-  return (
-    <section className="page-view">
-      <div className="page-heading">
-        <div>
-          <span>Analyse déterministe avant IA</span>
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-        {onReview && (
-          <button className="primary page-cta" onClick={onReview}>
-            <Sparkles size={14} />
-            Lancer la revue IA
-          </button>
-        )}
-      </div>
-      <div className="finding-summary">
-        {["critical", "high", "medium", "low", "info"].map((severity) => (
-          <b className={severity} key={severity}>
-            {counts[severity] ?? 0}
-            <small>{severityLabels[severity]}</small>
-          </b>
-        ))}
-      </div>
-      <div className="finding-list">
-        {items.map((finding) => (
-          <article
-            key={finding.id}
-            className={finding.status === "ignored" ? "muted" : ""}
-          >
-            <i className={finding.severity} />
-            <div>
-              <span>
-                {finding.category} · {finding.detector} · confiance{" "}
-                {Math.round(finding.confidence * 100)}%
-              </span>
-              <h2>{finding.title}</h2>
-              <p>{finding.description}</p>
-              <code>
-                {finding.primary_span?.path ?? finding.path ?? "projet"}:
-                {finding.primary_span?.start_line ?? finding.start_line ?? "—"}:
-                {finding.primary_span?.start_column ?? "—"}–
-                {finding.primary_span?.end_line ?? finding.end_line ?? "—"}:
-                {finding.primary_span?.end_column ?? "—"}
-              </code>
-              {finding.evidence.length > 0 && (
-                <ul>
-                  {finding.evidence.map((evidence, index) => (
-                    <li key={`${evidence}-${index}`}>{evidence}</li>
-                  ))}
-                </ul>
-              )}
-              {finding.ai_analysis && (
-                <details>
-                  <summary>Analyse IA enregistrée</summary>
-                  <pre>{finding.ai_analysis}</pre>
-                </details>
-              )}
-            </div>
-            <div className="finding-actions">
-              <em>{finding.status}</em>
-              {(finding.primary_span || finding.node_ids[0]) && (
-                <button onClick={() => onInspect(finding)}>Voir le code</button>
-              )}
-              <button onClick={() => onExplain(finding)}>
-                <Sparkles size={12} />
-                Expliquer avec l’IA
-              </button>
-              <button onClick={() => onStatus(finding, "accepted")}>
-                Confirmer
-              </button>
-              <button onClick={() => onStatus(finding, "ignored")}>
-                Ignorer
-              </button>
-              <button onClick={() => onStatus(finding, "false_positive")}>
-                Faux positif
-              </button>
-              <button onClick={() => onStatus(finding, "fixed")}>
-                Corrigé
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-export function DocsPage({
-  documentation,
-  projectId,
-  onRefresh,
-}: {
-  documentation: ProjectDocumentation | null;
-  projectId: string;
-  onRefresh: () => void;
-}) {
-  if (!documentation)
-    return (
-      <section className="page-view">
-        <div className="empty-card">
-          <LoaderCircle className="spinner" size={28} />
-          <h2>Construction de la documentation…</h2>
-        </div>
-      </section>
-    );
-  const sections: [string, string[]][] = [
-    ["Architecture", documentation.architecture],
-    ["Applications", documentation.applications],
-    ["Points d’entrée", documentation.entry_points],
-    ["Features", documentation.features],
-    ["Domaines", documentation.domains],
-    ["Flux principaux", documentation.main_flows],
-    ["Modules", documentation.modules],
-    ["API", documentation.apis],
-    ["Modèle de données", documentation.data_model],
-    ["Services externes", documentation.external_services],
-    ["Workers", documentation.workers],
-    ["Événements", documentation.events],
-    ["Configuration", documentation.configuration],
-    ["Sécurité", documentation.security_notes],
-    ["Développement", documentation.development],
-    ["Déploiement", documentation.deployment],
-    ["Limites connues", documentation.known_limitations],
-  ];
-  return (
-    <section className="page-view">
-      <div className="page-heading">
-        <div>
-          <span>
-            Connaissance projet ·{" "}
-            {documentation.cache_hit ? "cache à jour" : "génération fraîche"}
-          </span>
-          <h1>Documentation de {documentation.project_name}</h1>
-          <p>{documentation.overview}</p>
-        </div>
-        <div className="docs-actions">
-          <button onClick={onRefresh}>
-            <RefreshCw size={14} />
-            Actualiser
-          </button>
-          <a
-            href={`/api/projects/${projectId}/docs/markdown`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Exporter en Markdown
-          </a>
-        </div>
-      </div>
-      <article className="docs-purpose">
-        <h2>Objectif</h2>
-        <p>{documentation.purpose}</p>
-      </article>
-      <div className="docs-grid">
-        {sections.map(([title, items]) => (
-          <section key={title}>
-            <h2>{title}</h2>
-            {items.length ? (
-              <ul>
-                {items.slice(0, 100).map((item, index) => (
-                  <li key={`${item}-${index}`}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <p>Non détecté.</p>
-            )}
-          </section>
-        ))}
-      </div>
-    </section>
   );
 }
 export function LibraryPage({

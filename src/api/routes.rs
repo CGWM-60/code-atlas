@@ -71,9 +71,9 @@ use std::{
 };
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
-type ApiResult<T> = Result<T, ApiError>;
+pub(super) type ApiResult<T> = Result<T, ApiError>;
 #[derive(Debug)]
-struct ApiError(StatusCode, String);
+pub(super) struct ApiError(pub(super) StatusCode, pub(super) String);
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.0, Json(json!({"error":self.1}))).into_response()
@@ -87,6 +87,7 @@ impl From<anyhow::Error> for ApiError {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .merge(super::intelligence::router())
         .route(
             "/api/health",
             get(|| async { Json(json!({"status":"ok","service":"code-atlas"})) }),

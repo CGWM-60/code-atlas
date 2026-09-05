@@ -26,3 +26,8 @@ pub mod storage;
 pub mod watcher;
 
 pub use engine::{AnalysisResult, ProjectAnalyzer};
+
+pub mod assistant;
+pub mod intelligence;
+pub mod retrieval;
+pub mod assistant_tools;

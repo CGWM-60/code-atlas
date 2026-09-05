@@ -136,6 +136,28 @@ pub fn apply_ai_documentation(
 
 pub fn project_content_hash(graph: &ProjectGraph) -> String {
     let mut hasher = Sha256::new();
+    hasher.update(graph.root.as_bytes());
+    // Body-only edits must invalidate knowledge caches too: stable graph IDs
+    // deliberately survive these edits and cannot be used as content hashes.
+    let paths = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.path.as_deref())
+        .collect::<std::collections::BTreeSet<_>>();
+    if let Ok(root) = std::path::Path::new(&graph.root).canonicalize() {
+        for path in paths {
+            if crate::ai::context_builder::sensitive_path(path) {
+                continue;
+            }
+            hasher.update(path.as_bytes());
+            if let Ok(absolute) = root.join(path).canonicalize()
+                && absolute.starts_with(&root)
+                && let Ok(bytes) = std::fs::read(absolute)
+            {
+                hasher.update(bytes);
+            }
+        }
+    }
     for node in &graph.nodes {
         hasher.update(node.id.as_bytes());
         hasher.update(node.kind.as_str().as_bytes());

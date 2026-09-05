@@ -104,7 +104,9 @@ export function ApiPage({
   projectId,
   onInspect,
   onTrace,
+  seed = "",
 }: {
+  seed?: string;
   projectId: string;
   onInspect: (id: string) => void;
   onTrace: (id: string) => void;
@@ -138,6 +140,7 @@ export function ApiPage({
   useEffect(() => {
     void refresh();
   }, [projectId]);
+  useEffect(() => { if (seed) { const endpoint = endpoints.find(e => e.id === seed); if (endpoint) selectEndpoint(endpoint); } }, [seed, endpoints]);
   async function refresh() {
     const [endpointResponse, historyResponse, savedResponse, collectionResponse, contractResponse] = await Promise.all([
       fetch("/api/projects/" + projectId + "/api/endpoints"),

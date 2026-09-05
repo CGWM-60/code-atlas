@@ -147,6 +147,42 @@ fn tools() -> Vec<Value> {
     let node = project_schema(json!({"node_id":{"type":"string"}}), &["node_id"]);
     vec![
         tool(
+            "atlas_semantic_search",
+            "Search local concept vectors; heuristic, not neural embeddings.",
+            project_schema(json!({"query":{"type":"string"}}), &["query"]),
+        ),
+        tool(
+            "atlas_hybrid_search",
+            "Combine lexical, symbol, graph and local concept similarity scores.",
+            project_schema(json!({"query":{"type":"string"}}), &["query"]),
+        ),
+        tool(
+            "atlas_get_test_plan",
+            "Inspect existing tests and proposed scenarios; coverage remains unverified.",
+            project_schema(json!({"feature_id":{"type":"string"}}), &[]),
+        ),
+        tool(
+            "atlas_estimate_change",
+            "Estimate candidate scope and heuristic time ranges.",
+            project_schema(json!({"task":{"type":"string"}}), &["task"]),
+        ),
+        tool(
+            "atlas_get_git_diff",
+            "Read a Git diff without modifying the repository.",
+            project_schema(
+                json!({"base":{"type":"string"},"head":{"type":"string"}}),
+                &[],
+            ),
+        ),
+        tool(
+            "atlas_review_diff",
+            "Read diff lines and candidate graph/Feature impacts.",
+            project_schema(
+                json!({"base":{"type":"string"},"head":{"type":"string"}}),
+                &[],
+            ),
+        ),
+        tool(
             "atlas_list_projects",
             "List registered Code Atlas projects.",
             none,
@@ -435,8 +471,57 @@ fn context_value(
     ))?)
 }
 
-fn call_tool(repository: &Repository, name: &str, args: &Map<String, Value>) -> Result<Value> {
+pub(crate) fn call_tool(
+    repository: &Repository,
+    name: &str,
+    args: &Map<String, Value>,
+) -> Result<Value> {
     match name {
+        "atlas_hybrid_search" | "atlas_semantic_search" => {
+            use crate::retrieval::{EmbeddingProvider, VectorStore};
+            let (id, graph) = project_graph(repository, args)?;
+            let features = repository.list_features(&id)?;
+            let query = string_arg(args, "query")?;
+            if name == "atlas_semantic_search" {
+                crate::retrieval::rebuild_project(repository, &id, &graph, &features, false)?;
+                return Ok(json!(repository.search_by_project(
+                    &id,
+                    &crate::retrieval::LocalEmbedding.embed(query),
+                    None,
+                    20
+                )?));
+            }
+            Ok(
+                json!({"items":crate::retrieval::HybridRetriever::search(repository, &id, &graph, &features, query, None, 20)?}),
+            )
+        }
+        "atlas_get_test_plan" => {
+            let (id, graph) = project_graph(repository, args)?;
+            Ok(json!(crate::intelligence::cached_test_plan(
+                repository, &id, &graph,
+                &repository.list_features(&id)?,
+                args.get("feature_id").and_then(Value::as_str)
+            )?))
+        }
+        "atlas_estimate_change" => {
+            let (id, graph) = project_graph(repository, args)?;
+            Ok(json!(crate::intelligence::estimate(
+                repository,
+                &id,
+                &graph,
+                &repository.list_features(&id)?,
+                string_arg(args, "task")?
+            )?))
+        }
+        "atlas_get_git_diff" | "atlas_review_diff" => {
+            let (id, graph) = project_graph(repository, args)?;
+            Ok(json!(crate::intelligence::git_diff(
+                &graph,
+                &repository.list_features(&id)?,
+                args.get("base").and_then(Value::as_str),
+                args.get("head").and_then(Value::as_str)
+            )?))
+        }
         "atlas_list_projects" => Ok(serde_json::to_value(repository.list()?)?),
         "atlas_get_project" => {
             let id = string_arg(args, "project_id")?;

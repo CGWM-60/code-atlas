@@ -44,7 +44,7 @@ pub struct ProjectSummary {
 /// SQLite repository. A mutex serializes short transactions; AST parsing never runs
 /// while this lock is held, so concurrent HTTP reads stay responsive.
 pub struct Repository {
-    connection: Mutex<Connection>,
+    pub(crate) connection: Mutex<Connection>,
 }
 impl Repository {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -55,6 +55,7 @@ impl Repository {
         connection.execute_batch(include_str!("../../migrations/004_product_completion.sql"))?;
         connection.execute_batch(include_str!("../../migrations/005_finding_scan_cache.sql"))?;
         connection.execute_batch(include_str!("../../migrations/006_api_explorer.sql"))?;
+        connection.execute_batch(include_str!("../../migrations/007_intelligence.sql"))?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -67,6 +68,7 @@ impl Repository {
         connection.execute_batch(include_str!("../../migrations/004_product_completion.sql"))?;
         connection.execute_batch(include_str!("../../migrations/005_finding_scan_cache.sql"))?;
         connection.execute_batch(include_str!("../../migrations/006_api_explorer.sql"))?;
+        connection.execute_batch(include_str!("../../migrations/007_intelligence.sql"))?;
         Ok(Self {
             connection: Mutex::new(connection),
         })

@@ -1,0 +1,9 @@
+import { describe, expect, it, vi } from "vitest";
+import { dispatchUiAction, type ActionHandlers } from "./uiActions";
+function handlers(): ActionHandlers { return { navigate: vi.fn(), node: vi.fn(), file: vi.fn(), feature: vi.fn(), finding: vi.fn(), flow: vi.fn(), api: vi.fn(), library: vi.fn(), fit: vi.fn(), filter: vi.fn(), tests: vi.fn(), estimate: vi.fn() }; }
+describe("assistant UI actions", () => {
+ it("opens exact evidence lines", async () => { const h = handlers(); await dispatchUiAction({ type: "OPEN_SOURCE_RANGE", node_id: "login", start_line: 8, end_line: 15 }, h); expect(h.node).toHaveBeenCalledWith("login", "source", [8, 15]); });
+ it("rejects malformed source ranges", async () => { const h = handlers(); await expect(dispatchUiAction({ type: "OPEN_SOURCE_RANGE", node_id: "login", start_line: 10, end_line: 4 }, h)).rejects.toThrow(); expect(h.node).not.toHaveBeenCalled(); });
+ it("preserves feature and graph destinations", async () => { const h = handlers(); await dispatchUiAction({ type: "OPEN_FEATURE_SOURCE", feature_id: "auth" }, h); expect(h.feature).toHaveBeenCalledWith("auth", "source"); await dispatchUiAction({ type: "FOCUS_GRAPH", node_id: "login" }, h); expect(h.node).toHaveBeenCalledWith("login", "focus"); });
+ it("routes findings, test plans, estimates and Git to their real views", async () => { const h = handlers(); await dispatchUiAction({ type: "OPEN_FINDING", finding_id: "xss" }, h); expect(h.finding).toHaveBeenCalledWith("xss"); await dispatchUiAction({ type: "SHOW_TEST_PLAN", feature_id: "auth" }, h); expect(h.tests).toHaveBeenCalledWith("auth"); await dispatchUiAction({ type: "SHOW_ESTIMATE", task: "2FA" }, h); expect(h.estimate).toHaveBeenCalledWith("2FA"); await dispatchUiAction({ type: "SHOW_DIFF" }, h); expect(h.navigate).toHaveBeenCalledWith("git"); });
+});

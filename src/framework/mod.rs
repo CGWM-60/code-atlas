@@ -168,8 +168,22 @@ fn analyze_next(file: &ProjectFile, symbols: &[CodeNode], out: &mut FrameworkAna
         1,
     );
     if kind == NodeKind::ApiEndpoint {
-        for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
             if let Some(handler) = find_handler(symbols, &file.path, method) {
+                // Keep the original path node for compatibility, and expose each
+                // observed HTTP export as an independently navigable endpoint.
+                let endpoint = virtual_node(
+                    file,
+                    NodeKind::ApiEndpoint,
+                    format!("{} {}", method, node.name),
+                    handler.start_line.unwrap_or(1),
+                );
+                out.edges.push(CodeEdge::new(
+                    endpoint.id.clone(),
+                    handler.id.clone(),
+                    RelationKind::HandledBy,
+                ));
+                out.nodes.push(endpoint);
                 out.edges.push(CodeEdge::new(
                     node.id.clone(),
                     handler.id.clone(),
