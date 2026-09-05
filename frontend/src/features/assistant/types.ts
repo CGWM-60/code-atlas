@@ -11,7 +11,8 @@ export type UiAction =
  | { type: "FILTER_GRAPH"; kinds: string[] }
  | { type: "SHOW_TEST_PLAN"; feature_id: string | null }
  | { type: "SHOW_ESTIMATE"; task: string }
- | { type: "OPEN_SECURITY" | "OPEN_QUALITY" | "OPEN_API" | "OPEN_DOCUMENTATION" | "FIT_GRAPH" | "SHOW_DIFF" };
+ | { type: "SHOW_DIFF"; base?: string | null; head?: string | null }
+ | { type: "OPEN_SECURITY" | "OPEN_QUALITY" | "OPEN_API" | "OPEN_DOCUMENTATION" | "FIT_GRAPH" };
 export type Citation = { node_id: string; path: string; symbol: string; start_line: number; end_line: number; source_hash: string; source: string; tool: string };
 export type AssistantResponse = { answer: string; citations: Citation[]; entities: AtlasNode[]; actions: UiAction[]; suggested_followups: string[]; tool_calls: { tool: string; status: string; summary: string }[]; specialists: string[]; uncertain: boolean; mode: string; context_tokens: number };
 export type Conversation = { id: string; project_id: string; title: string; updated_at: number };

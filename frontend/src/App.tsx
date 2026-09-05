@@ -272,6 +272,8 @@ export default function App() {
     details: SourceDetails;
     finding?: EvidenceFinding;
   } | null>(null);
+  const [gitSeed, setGitSeed] = useState<{ base?: string | null; head?: string | null }>({});
+  const [currentDiff, setCurrentDiff] = useState("");
   const [flowSeed, setFlowSeed] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -319,6 +321,7 @@ export default function App() {
       library: async id => { const entry = await api<LibraryEntry>(`/api/library/${encodeURIComponent(id)}`); setCodeInspector(null); setPage("library"); await openLibraryEntry(entry); },
       fit: () => { setPage("map"); void flow?.fitView({ padding: .2 }); },
       filter: kinds => { setEnabledKinds(new Set(kinds)); setPage("map"); },
+      diff: (base, head) => { setGitSeed({ base, head }); setCodeInspector(null); setSelectedFeature(null); setPage("git"); },
       tests: feature => { setCodeInspector(null); setSelectedFeature(null); setTestSeed(feature ?? ""); setPage("tests"); },
       estimate: task => { setCodeInspector(null); setSelectedFeature(null); setEstimateSeed(task); setPage("estimate"); },
     });
@@ -1184,8 +1187,8 @@ export default function App() {
       {page === "dependencies" && projectId && <DependenciesPage key={"deps:" + projectId} projectId={projectId} onFile={path => void handleUiAction({ type: "OPEN_FILE", path }).catch(error => setStatus(String(error)))} />}
       {page === "tests" && projectId && <TestsPage key={"TestsPage:" + projectId} projectId={projectId} features={features} seed={testSeed} onInspect={id => void inspectCode(id)} />}
       {page === "estimate" && projectId && <EstimatePage key={"EstimatePage:" + projectId} features={features} onFeature={id => { const feature = features.find(f => f.id === id); if (feature) { setPage("features"); void openFeature(feature); } }} projectId={projectId} seed={estimateSeed} onInspect={id => void inspectCode(id)} />}
-      {page === "git" && projectId && <GitPage key={"GitPage:" + projectId} features={features} onFeature={id => { const feature = features.find(f => f.id === id); if (feature) { setPage("features"); void openFeature(feature); } }} projectId={projectId} onInspect={id => void inspectCode(id)} />}
-      {assistantOpen && projectId && <AssistantPanel key={"AssistantPanel:" + projectId} projectId={projectId} projectName={projects.find(p => p.id === projectId)?.name ?? "Projet"} context={{ active_page: page, selected_node: selectedId ?? undefined, selected_feature: selectedFeature?.id, selected_file: codeInspector?.details.node.path, selected_finding: codeInspector?.finding?.id, selected_range: codeInspector?.finding?.primary_span ? [codeInspector.finding.primary_span.start_line, codeInspector.finding.primary_span.end_line ?? codeInspector.finding.primary_span.start_line] : undefined, current_flow: page === "flow" ? flowSeed : undefined }} configuration={aiSettings.apiKey ? { provider: aiSettings.provider, api_key: aiSettings.apiKey, model: aiSettings.model } : undefined} onAction={handleUiAction} onClose={() => setAssistantOpen(false)} />}
+      {page === "git" && projectId && <GitPage seed={gitSeed} onComparison={setCurrentDiff} key={`GitPage:${projectId}:${gitSeed.base}:${gitSeed.head}`} features={features} onFeature={id => { const feature = features.find(f => f.id === id); if (feature) { setPage("features"); void openFeature(feature); } }} projectId={projectId} onInspect={id => void inspectCode(id)} />}
+      {assistantOpen && projectId && <AssistantPanel key={"AssistantPanel:" + projectId} projectId={projectId} projectName={projects.find(p => p.id === projectId)?.name ?? "Projet"} context={{ active_page: page, selected_node: selectedId ?? undefined, selected_feature: selectedFeature?.id, selected_file: codeInspector?.details.node.path, selected_finding: codeInspector?.finding?.id, selected_range: codeInspector?.finding?.primary_span ? [codeInspector.finding.primary_span.start_line, codeInspector.finding.primary_span.end_line ?? codeInspector.finding.primary_span.start_line] : undefined, current_flow: page === "flow" ? flowSeed : undefined, current_diff: page === "git" ? currentDiff : undefined }} configuration={aiSettings.apiKey ? { provider: aiSettings.provider, api_key: aiSettings.apiKey, model: aiSettings.model } : undefined} onAction={handleUiAction} onClose={() => setAssistantOpen(false)} />}
       {paletteOpen && <CommandPalette projectId={projectId} projects={projects} features={features} onProject={id => void loadProject(id)} onAction={handleUiAction} onAssistant={() => setAssistantOpen(true)} onClose={() => setPaletteOpen(false)} />}
       {page === "projects" && (
         <ProjectsPage

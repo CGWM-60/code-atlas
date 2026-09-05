@@ -4,6 +4,7 @@ export type ActionHandlers = {
  file: (path: string) => Promise<void>; feature: (id: string, view: "overview" | "source" | "graph") => Promise<void>;
  finding: (id: string) => Promise<void>; flow: (id: string) => void; api: (id?: string) => Promise<void>;
  library: (id: string) => Promise<void>; fit: () => void; filter: (kinds: string[]) => void;
+ diff: (base?: string | null, head?: string | null) => void;
  tests: (feature: string | null) => void; estimate: (task: string) => void;
 };
 export async function dispatchUiAction(action: UiAction, handlers: ActionHandlers): Promise<void> {
@@ -29,7 +30,7 @@ export async function dispatchUiAction(action: UiAction, handlers: ActionHandler
   case "OPEN_LIBRARY_ENTRY": return handlers.library(action.entry_id);
   case "FIT_GRAPH": return handlers.fit();
   case "FILTER_GRAPH": return handlers.filter(action.kinds);
-  case "SHOW_DIFF": return handlers.navigate("git");
+  case "SHOW_DIFF": return handlers.diff(action.base, action.head);
   case "SHOW_TEST_PLAN": return handlers.tests(action.feature_id);
   case "SHOW_ESTIMATE": return handlers.estimate(action.task);
   default: throw new Error("Action UI inconnue");

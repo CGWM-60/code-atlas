@@ -83,7 +83,12 @@ pub enum UiAction {
     ShowRelatedNodes {
         node_id: String,
     },
-    ShowDiff,
+    ShowDiff {
+        #[serde(default)]
+        base: Option<String>,
+        #[serde(default)]
+        head: Option<String>,
+    },
     ShowTestPlan {
         feature_id: Option<String>,
     },
@@ -509,6 +514,8 @@ impl AgentOrchestrator {
         // Follow-up questions inherit a prior entity, but fresh explicit topics retain retrieval priority.
         let followup = [
             "il y a",
+            "si je",
+            "montre-moi les fichiers",
             "quels tests",
             "génère",
             "combien",
@@ -700,14 +707,22 @@ impl AgentOrchestrator {
                     });
                 }
                 "GitReviewAgent" => {
-                    let value =
-                        crate::intelligence::git_diff(project, &graph, &features, None, None)?;
+                    let (base, head) = git_comparison(question);
+                    let value = crate::intelligence::git_diff(
+                        project,
+                        &graph,
+                        &features,
+                        base.as_deref(),
+                        head.as_deref(),
+                    )?;
                     answer = format!(
-                        "{} fichiers dans le diff du répertoire de travail par rapport à HEAD. Ouvrez la revue pour les lignes et les impacts candidats.",
-                        value.files.len()
+                        "{} fichiers dans le diff de {} vers {}. Ouvrez la revue pour les lignes et les impacts candidats.",
+                        value.files.len(),
+                        base.as_deref().unwrap_or("HEAD"),
+                        head.as_deref().unwrap_or("le répertoire de travail")
                     );
                     structured = Some(json!({"diff":value}));
-                    actions = vec![UiAction::ShowDiff];
+                    actions = vec![UiAction::ShowDiff { base, head }];
                     tool_calls.push(ToolCall {
                         tool: "get_git_diff".into(),
                         status: "completed".into(),
@@ -858,4 +873,17 @@ fn collect_node_ids(value: &Value, graph: &ProjectGraph, ids: &mut Vec<String>) 
         }
         _ => {}
     }
+}
+
+/// Natural-language revision extraction is deliberately narrow. Git itself
+/// validates every reference before reading a diff; no shell text is executed.
+fn git_comparison(question: &str) -> (Option<String>, Option<String>) {
+    let expression = regex::Regex::new(r#"(?i)(?:entre|between)\s+[`\"']?([A-Za-z0-9_./-]+)[`\"']?\s+(?:et|and)\s+[`\"']?([A-Za-z0-9_./-]+)"#).expect("static revision pattern");
+    if let Some(captures) = expression.captures(question) {
+        return (
+            Some(captures[1].trim_end_matches('.').into()),
+            Some(captures[2].trim_end_matches('.').into()),
+        );
+    }
+    (None, None)
 }
