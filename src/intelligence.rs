@@ -149,6 +149,12 @@ pub struct TimeRange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeEstimate {
     pub summary: String,
+    pub scope: Vec<String>,
+    pub dependencies: Vec<CodeNode>,
+    pub security_considerations: Vec<crate::findings::Finding>,
+    pub testing_requirements: Vec<String>,
+    pub api_nodes: Vec<CodeNode>,
+    pub complexity: usize,
     pub affected_features: Vec<String>,
     pub affected_nodes: Vec<CodeNode>,
     pub affected_files: Vec<String>,
@@ -196,7 +202,76 @@ fn estimate_uncached(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let scale = 1.0 + (files.len() as f32).sqrt();
+    let findings = crate::findings::detect_findings(project, graph);
+    let security_considerations = findings
+        .iter()
+        .filter(|f| {
+            f.category == crate::findings::FindingCategory::Security
+                && f.node_ids.iter().any(|id| ids.contains(id))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let dependency_ids = nodes
+        .iter()
+        .flat_map(|n| graph.outgoing_edges(&n.id))
+        .filter(|e| !ids.contains(&e.target_id))
+        .map(|e| e.target_id.clone())
+        .collect::<BTreeSet<_>>();
+    let dependencies = dependency_ids
+        .iter()
+        .filter_map(|id| graph.find_node(id).cloned())
+        .take(50)
+        .collect::<Vec<_>>();
+    let api_nodes = nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n.kind,
+                crate::model::node::NodeKind::ApiEndpoint | crate::model::node::NodeKind::Route
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let complexity = nodes
+        .iter()
+        .filter_map(|n| source(graph, n))
+        .map(|(text, _, _)| {
+            text.lines()
+                .filter(|line| {
+                    ["if ", "match ", "case ", "for ", "while ", "&&", "||"]
+                        .iter()
+                        .any(|p| line.contains(p))
+                })
+                .count()
+        })
+        .sum::<usize>();
+    let related_features = features
+        .iter()
+        .filter(|f| f.node_ids.iter().any(|id| ids.contains(id)))
+        .collect::<Vec<_>>();
+    let mut testing_requirements = related_features
+        .iter()
+        .flat_map(|f| {
+            f.missing_signals
+                .iter()
+                .filter(|signal| signal.to_lowercase().contains("test"))
+                .cloned()
+        })
+        .collect::<Vec<_>>();
+    testing_requirements.push(format!(
+        "Vérifier les contrats de {} routes/API candidates et les erreurs de dépendances.",
+        api_nodes.len()
+    ));
+    testing_requirements.push("Exécuter les tests existants, compléter les cas nominaux/erreurs et vérifier les régressions avant validation.".into());
+    let scope = related_features
+        .iter()
+        .map(|f| format!("{} : {}", f.name, f.description))
+        .collect::<Vec<_>>();
+    let scale = 1.0
+        + (files.len() as f32).sqrt()
+        + (complexity as f32).sqrt() * 0.25
+        + security_considerations.len().min(10) as f32 * 0.1;
+
     let breakdown = if hits.is_empty() {
         vec![]
     } else {
@@ -219,7 +294,7 @@ fn estimate_uncached(
         })
         .collect()
     };
-    Ok(ChangeEstimate{summary:task.into(),affected_features:features.iter().filter(|f|f.node_ids.iter().any(|id|ids.contains(id))).map(|f|f.id.clone()).collect(),affected_nodes:nodes,affected_files:files,breakdown,unknowns:vec!["Chiffrage heuristique en heures, non calibré sur la vélocité de votre équipe.".into(),"Valider le périmètre, les critères d’acceptation, les migrations et les intégrations externes avant engagement.".into(),"La recherche fournit des candidats ; les fichiers listés ne sont pas tous nécessairement à modifier.".into()],risk_level:if ids.len()>30{"high"}else{"unknown"}.into(),confidence:if hits.is_empty(){0.0}else{0.3},provenance:"HybridRetriever + impact entrant (profondeur 2). Coefficients de temps explicites et heuristiques.".into()})
+    Ok(ChangeEstimate{summary:task.into(),scope,dependencies,security_considerations,testing_requirements,api_nodes,complexity,affected_features:features.iter().filter(|f|f.node_ids.iter().any(|id|ids.contains(id))).map(|f|f.id.clone()).collect(),affected_nodes:nodes,affected_files:files,breakdown,unknowns:vec!["Chiffrage heuristique en heures, non calibré sur la vélocité de votre équipe.".into(),"Valider le périmètre, les critères d’acceptation, les migrations et les intégrations externes avant engagement.".into(),"La recherche fournit des candidats ; les fichiers listés ne sont pas tous nécessairement à modifier.".into()],risk_level:if ids.len()>30{"high"}else{"unknown"}.into(),confidence:if hits.is_empty(){0.0}else{0.3},provenance:"HybridRetriever + impact entrant (profondeur 2). Coefficients de temps explicites et heuristiques.".into()})
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffLine {
@@ -242,12 +317,19 @@ pub struct DiffAnalysis {
     pub base: Option<String>,
     pub head: Option<String>,
     pub files: Vec<DiffFile>,
+    pub affected_nodes: Vec<CodeNode>,
+    pub affected_features: Vec<String>,
+    pub current_findings: Vec<crate::findings::Finding>,
+    pub test_nodes: Vec<CodeNode>,
+    pub api_nodes: Vec<CodeNode>,
+    pub recommendations: Vec<String>,
     pub warnings: Vec<String>,
 }
 fn git(root: &str, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
+        .args(["-c", "core.quotePath=false"])
         .args(args)
         .env("GIT_OPTIONAL_LOCKS", "0")
         .output()
@@ -272,7 +354,53 @@ fn revision(root: &str, value: &str) -> Result<String> {
     )
     .map(|s| s.trim().into())
 }
+/// Git quotes control characters even with core.quotePath=false. Decode only
+/// its documented C-style filename escapes; a malformed header is not a path.
+fn git_header_path(header: &str) -> Option<String> {
+    let raw = header.trim_end_matches('\t');
+    let decoded = if raw.starts_with('"') {
+        let inner = raw.strip_prefix('"')?.strip_suffix('"')?;
+        let mut bytes = Vec::new();
+        let mut chars = inner.bytes().peekable();
+        while let Some(value) = chars.next() {
+            if value != b'\\' {
+                bytes.push(value);
+                continue;
+            }
+            let escaped = chars.next()?;
+            bytes.push(match escaped {
+                b'n' => b'\n',
+                b't' => b'\t',
+                b'r' => b'\r',
+                b'\\' => b'\\',
+                b'"' => b'"',
+                b'a' => 7,
+                b'b' => 8,
+                b'f' => 12,
+                b'v' => 11,
+                b'0'..=b'3' => {
+                    let second = chars.next()?;
+                    let third = chars.next()?;
+                    if !(b'0'..=b'7').contains(&second) || !(b'0'..=b'7').contains(&third) {
+                        return None;
+                    }
+                    (escaped - b'0') * 64 + (second - b'0') * 8 + third - b'0'
+                }
+                _ => return None,
+            });
+        }
+        String::from_utf8(bytes).ok()?
+    } else {
+        raw.into()
+    };
+    decoded
+        .strip_prefix("a/")
+        .or_else(|| decoded.strip_prefix("b/"))
+        .map(str::to_owned)
+}
+
 pub fn git_diff(
+    project: &str,
     graph: &ProjectGraph,
     features: &[Feature],
     base: Option<&str>,
@@ -286,6 +414,7 @@ pub fn git_diff(
     let mut args = vec![
         "diff".to_owned(),
         "--no-ext-diff".into(),
+        "--no-renames".into(),
         "--no-textconv".into(),
         "--no-color".into(),
         "--unified=3".into(),
@@ -306,24 +435,29 @@ pub fn git_diff(
     let mut files = Vec::<DiffFile>::new();
     let (mut old, mut new) = (0, 0);
     let mut truncated = false;
+    let mut previous_path = None;
     for (i, line) in raw.lines().enumerate() {
         if i >= 20000 {
             truncated = true;
             break;
         }
-        if let Some(path) = line.strip_prefix("+++ b/") {
-            files.push(DiffFile {
-                path: path.into(),
-                lines: vec![],
-                nodes: vec![],
-                features: vec![],
-            });
+        if line.starts_with("diff --git") {
+            previous_path = None;
             continue;
         }
-        if let Some(path) = line.strip_prefix("--- a/") {
-            if raw.contains(&format!("--- a/{path}\n+++ /dev/null")) {
+        if let Some(header) = line.strip_prefix("--- ") {
+            previous_path = git_header_path(header);
+            continue;
+        }
+        if let Some(header) = line.strip_prefix("+++ ") {
+            let path = if header == "/dev/null" {
+                previous_path.take()
+            } else {
+                git_header_path(header)
+            };
+            if let Some(path) = path {
                 files.push(DiffFile {
-                    path: path.into(),
+                    path,
                     lines: vec![],
                     nodes: vec![],
                     features: vec![],
@@ -331,7 +465,7 @@ pub fn git_diff(
             }
             continue;
         }
-        if line.starts_with("diff --git") || line.starts_with("index ") || line.starts_with("+++") {
+        if line.starts_with("index ") {
             continue;
         }
         let Some(file) = files.last_mut() else {
@@ -406,28 +540,127 @@ pub fn git_diff(
     if truncated {
         warnings.push("Diff tronqué à 20 000 lignes.".into());
     }
+    let changed_paths = files
+        .iter()
+        .map(|f| f.path.as_str())
+        .collect::<BTreeSet<_>>();
+    let affected_nodes = graph
+        .nodes
+        .iter()
+        .filter(|n| n.path.as_deref().is_some_and(|p| changed_paths.contains(p)))
+        .cloned()
+        .take(200)
+        .collect::<Vec<_>>();
+    let affected_features = files
+        .iter()
+        .flat_map(|f| f.features.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let current_findings = crate::findings::detect_findings(project, graph)
+        .into_iter()
+        .filter(|f| f.path.as_deref().is_some_and(|p| changed_paths.contains(p)))
+        .take(100)
+        .collect::<Vec<_>>();
+    let test_nodes = affected_nodes
+        .iter()
+        .filter(|n| {
+            n.path
+                .as_deref()
+                .is_some_and(|p| p.contains("test") || p.contains("spec."))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let api_nodes = affected_nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n.kind,
+                crate::model::node::NodeKind::ApiEndpoint | crate::model::node::NodeKind::Route
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let recommendations=vec![format!("Examiner {} Features candidates et leurs relations entrantes.",affected_features.len()),format!("Vérifier les contrats de {} routes/API et exécuter les tests concernés.",api_nodes.len()),"Les findings affichés concernent le code actuel : leur introduction ou résolution dans le diff reste à établir.".into()];
     Ok(DiffAnalysis {
         branch: branch.trim().into(),
         branches: branches.lines().map(str::to_owned).collect(),
         base: base.map(str::to_owned),
         head: head.map(str::to_owned),
         files,
+        affected_nodes,
+        affected_features,
+        current_findings,
+        test_nodes,
+        api_nodes,
+        recommendations,
         warnings,
     })
 }
 
-fn cached<T: Serialize + serde::de::DeserializeOwned>(repo: &Repository, project: &str, kind: &str, content_hash: &str, compute: impl FnOnce() -> Result<T>) -> Result<T> {
-    let key = crate::context_engine::ai_cache_key(content_hash, kind, "intelligence-v1", "deterministic", "local");
-    if let Some(value) = repo.get_ai_cache(&key)? { return Ok(serde_json::from_value(value)?); }
+fn cached<T: Serialize + serde::de::DeserializeOwned>(
+    repo: &Repository,
+    project: &str,
+    kind: &str,
+    content_hash: &str,
+    compute: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let key = crate::context_engine::ai_cache_key(
+        content_hash,
+        kind,
+        "intelligence-v2",
+        "deterministic",
+        "local",
+    );
+    if let Some(value) = repo.get_ai_cache(&key)? {
+        return Ok(serde_json::from_value(value)?);
+    }
     let value = compute()?;
-    repo.save_ai_cache(&crate::context_engine::AiCacheWrite { cache_key: &key, project_id: project, analysis_type: kind, content_hash, prompt_version: "intelligence-v1", provider: "deterministic", model: "local", result: &serde_json::to_value(&value)?, input_tokens: None, output_tokens: None })?;
+    repo.save_ai_cache(&crate::context_engine::AiCacheWrite {
+        cache_key: &key,
+        project_id: project,
+        analysis_type: kind,
+        content_hash,
+        prompt_version: "intelligence-v2",
+        provider: "deterministic",
+        model: "local",
+        result: &serde_json::to_value(&value)?,
+        input_tokens: None,
+        output_tokens: None,
+    })?;
     Ok(value)
 }
-pub fn cached_test_plan(repo: &Repository, project: &str, graph: &ProjectGraph, features: &[Feature], feature_id: Option<&str>) -> Result<TestPlan> {
-    let key = hash(&format!("{}:{}:{}",project,crate::documentation::project_knowledge_hash(graph,features,&[]),feature_id.unwrap_or("")));
-    cached(repo,project,"test_plan",&key,||test_plan(graph,features,feature_id))
+pub fn cached_test_plan(
+    repo: &Repository,
+    project: &str,
+    graph: &ProjectGraph,
+    features: &[Feature],
+    feature_id: Option<&str>,
+) -> Result<TestPlan> {
+    let key = hash(&format!(
+        "{}:{}:{}",
+        project,
+        crate::documentation::project_knowledge_hash(graph, features, &[]),
+        feature_id.unwrap_or("")
+    ));
+    cached(repo, project, "test_plan", &key, || {
+        test_plan(graph, features, feature_id)
+    })
 }
-pub fn estimate(repo: &Repository, project: &str, graph: &ProjectGraph, features: &[Feature], task: &str) -> Result<ChangeEstimate> {
-    let key = hash(&format!("{}:{}:{}",project,crate::documentation::project_knowledge_hash(graph,features,&[]),task));
-    cached(repo,project,"change_estimate",&key,||estimate_uncached(repo,project,graph,features,task))
+pub fn estimate(
+    repo: &Repository,
+    project: &str,
+    graph: &ProjectGraph,
+    features: &[Feature],
+    task: &str,
+) -> Result<ChangeEstimate> {
+    let key = hash(&format!(
+        "{}:{}:{}",
+        project,
+        crate::documentation::project_knowledge_hash(graph, features, &[]),
+        task
+    ));
+    cached(repo, project, "change_estimate", &key, || {
+        estimate_uncached(repo, project, graph, features, task)
+    })
 }

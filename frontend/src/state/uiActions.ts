@@ -1,6 +1,6 @@
 import type { UiAction } from "../features/assistant/types";
 export type ActionHandlers = {
- navigate: (page: string) => Promise<void>; node: (id: string, mode: "source" | "focus" | "impact", range?: [number, number]) => Promise<void>;
+ navigate: (page: string) => Promise<void>; node: (id: string, mode: "source" | "focus" | "impact", range?: [number, number], sourceHash?: string) => Promise<void>;
  file: (path: string) => Promise<void>; feature: (id: string, view: "overview" | "source" | "graph") => Promise<void>;
  finding: (id: string) => Promise<void>; flow: (id: string) => void; api: (id?: string) => Promise<void>;
  library: (id: string) => Promise<void>; fit: () => void; filter: (kinds: string[]) => void;
@@ -12,7 +12,7 @@ export async function dispatchUiAction(action: UiAction, handlers: ActionHandler
   case "OPEN_NODE": return handlers.node(action.node_id, "source");
   case "OPEN_SOURCE_RANGE": case "HIGHLIGHT_SOURCE_RANGE":
    if (action.start_line < 1 || action.end_line < action.start_line) throw new Error("Plage source invalide");
-   return handlers.node(action.node_id, "source", [action.start_line, action.end_line]);
+   return action.source_hash ? handlers.node(action.node_id, "source", [action.start_line, action.end_line], action.source_hash) : handlers.node(action.node_id, "source", [action.start_line, action.end_line]);
   case "SELECT_NODE": case "FOCUS_NODE": case "FOCUS_GRAPH": case "SHOW_RELATED_NODES": return handlers.node(action.node_id, "focus");
   case "OPEN_IMPACT": return handlers.node(action.node_id, "impact");
   case "OPEN_FILE": return handlers.file(action.path);

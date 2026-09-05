@@ -56,6 +56,7 @@ impl Repository {
         connection.execute_batch(include_str!("../../migrations/005_finding_scan_cache.sql"))?;
         connection.execute_batch(include_str!("../../migrations/006_api_explorer.sql"))?;
         connection.execute_batch(include_str!("../../migrations/007_intelligence.sql"))?;
+        connection.execute_batch(include_str!("../../migrations/008_neural_embeddings.sql"))?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -69,6 +70,7 @@ impl Repository {
         connection.execute_batch(include_str!("../../migrations/005_finding_scan_cache.sql"))?;
         connection.execute_batch(include_str!("../../migrations/006_api_explorer.sql"))?;
         connection.execute_batch(include_str!("../../migrations/007_intelligence.sql"))?;
+        connection.execute_batch(include_str!("../../migrations/008_neural_embeddings.sql"))?;
         Ok(Self {
             connection: Mutex::new(connection),
         })

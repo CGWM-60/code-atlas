@@ -1,3 +1,6 @@
+import { KnowledgeDocument } from "./components/KnowledgeDocument";
+import { ImpactView, type ImpactResult } from "./components/ImpactView";
+import { DependenciesPage } from "./pages/DependenciesPage";
 import type { Details, DirectoryListing, AiProvider, AiSettings, Page, ProjectSummary, ProgressState, ScoreFactor, RealUsage, AiFunctionParameter, AiFunctionDocumentation, LibraryEntry, LibraryCandidate, MyCodeItem, Finding, ProjectDocumentation, FeatureMembership, Feature, FeatureSpec, FeatureSnippet, FeatureLibraryEntry, ProjectDashboard, GeneratedFile, McpStatus } from "./types/contracts";
 export type { Details, DirectoryListing, AiProvider, AiSettings, Page, ProjectSummary, ProgressState, ScoreFactor, RealUsage, AiFunctionParameter, AiFunctionDocumentation, LibraryEntry, LibraryCandidate, MyCodeItem, Finding, ProjectDocumentation, FeatureMembership, Feature, FeatureSpec, FeatureSnippet, FeatureLibraryEntry, ProjectDashboard, GeneratedFile, McpStatus } from "./types/contracts";
 import { McpPage, ProjectsPage, MyCodePage, FindingsPage, DocsPage } from "./pages/KnowledgePages";
@@ -228,7 +231,7 @@ export default function App() {
   const [tab, setTab] = useState<"relations" | "source" | "impact" | "ai">(
     "relations",
   );
-  const [impact, setImpact] = useState<unknown>(null);
+  const [impact, setImpact] = useState<ImpactResult | null>(null);
   const [question, setQuestion] = useState(
     "Explain this element in the project architecture.",
   );
@@ -284,7 +287,7 @@ export default function App() {
     window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener);
   }, []);
   async function navigatePage(destination: string) {
-    const pages = ["projects", "map", "flow", "search", "features", "my-code", "library", "api", "docs", "quality", "security", "tests", "estimate", "git", "mcp"];
+    const pages = ["dependencies", "projects", "map", "flow", "search", "features", "my-code", "library", "api", "docs", "quality", "security", "tests", "estimate", "git", "mcp"];
     if (!pages.includes(destination)) throw new Error("Page inconnue");
     setCodeInspector(null); setSelectedFeature(null); setPage(destination as Page);
     if (destination === "security" || destination === "quality") await refreshFindings(destination);
@@ -296,7 +299,8 @@ export default function App() {
   async function handleUiAction(action: UiAction) {
     return dispatchUiAction(action, {
       navigate: navigatePage,
-      node: async (id, mode, range) => {
+      node: async (id, mode, range, sourceHash) => {
+        if (range && sourceHash) await api(`${projectApi(projectId)}/evidence/verify`, { method: "POST", body: JSON.stringify({ node_id:id,source_hash:sourceHash,start_line:range[0],end_line:range[1] }) });
         const details = await api<SourceDetails>(`${projectApi(projectId)}/nodes/${encodeURIComponent(id)}`);
         setSelectedId(id); setSelected(details); setSelectedFeature(null);
         if (mode === "source") {
@@ -1136,7 +1140,7 @@ export default function App() {
           >
             MCP
           </button>
-          {([['tests', 'Tests'], ['estimate', 'Estimation'], ['git', 'Git']] as const).map(([destination, label]) => <button key={destination} disabled={!projectId} className={page === destination ? "active" : ""} onClick={() => setPage(destination)}>{label}</button>)}
+          {([['tests', 'Tests'], ['estimate', 'Estimation'], ['git', 'Git'], ['dependencies', 'Dépendances']] as const).map(([destination, label]) => <button key={destination} disabled={!projectId} className={page === destination ? "active" : ""} onClick={() => setPage(destination)}>{label}</button>)}
         </nav>
         <button onClick={() => setPaletteOpen(true)} aria-label="Palette de commandes">⌘ K</button>
         <button disabled={!projectId} onClick={() => setAssistantOpen(value => !value)} aria-expanded={assistantOpen}>Assistant</button>
@@ -1177,10 +1181,11 @@ export default function App() {
       </header>
       {isAnalyzing && progress && <AnalysisProgressBar progress={progress} />}
       {projectId && <div className="workspace-breadcrumb"><b>{projects.find(p => p.id === projectId)?.name ?? projectId}</b><span>{projects.find(p => p.id === projectId)?.git_branch ?? "Local"}</span><span>{page}</span>{selectedId && <code>{selected?.node.name}</code>}</div>}
+      {page === "dependencies" && projectId && <DependenciesPage key={"deps:" + projectId} projectId={projectId} onFile={path => void handleUiAction({ type: "OPEN_FILE", path }).catch(error => setStatus(String(error)))} />}
       {page === "tests" && projectId && <TestsPage key={"TestsPage:" + projectId} projectId={projectId} features={features} seed={testSeed} onInspect={id => void inspectCode(id)} />}
-      {page === "estimate" && projectId && <EstimatePage key={"EstimatePage:" + projectId} projectId={projectId} seed={estimateSeed} onInspect={id => void inspectCode(id)} />}
-      {page === "git" && projectId && <GitPage key={"GitPage:" + projectId} projectId={projectId} onInspect={id => void inspectCode(id)} />}
-      {assistantOpen && projectId && <AssistantPanel key={"AssistantPanel:" + projectId} projectId={projectId} projectName={projects.find(p => p.id === projectId)?.name ?? "Projet"} context={{ active_page: page, selected_node: selectedId ?? undefined, selected_feature: selectedFeature?.id, selected_file: codeInspector?.details.node.path }} configuration={aiSettings.apiKey ? { provider: aiSettings.provider, api_key: aiSettings.apiKey, model: aiSettings.model } : undefined} onAction={handleUiAction} onClose={() => setAssistantOpen(false)} />}
+      {page === "estimate" && projectId && <EstimatePage key={"EstimatePage:" + projectId} features={features} onFeature={id => { const feature = features.find(f => f.id === id); if (feature) { setPage("features"); void openFeature(feature); } }} projectId={projectId} seed={estimateSeed} onInspect={id => void inspectCode(id)} />}
+      {page === "git" && projectId && <GitPage key={"GitPage:" + projectId} features={features} onFeature={id => { const feature = features.find(f => f.id === id); if (feature) { setPage("features"); void openFeature(feature); } }} projectId={projectId} onInspect={id => void inspectCode(id)} />}
+      {assistantOpen && projectId && <AssistantPanel key={"AssistantPanel:" + projectId} projectId={projectId} projectName={projects.find(p => p.id === projectId)?.name ?? "Projet"} context={{ active_page: page, selected_node: selectedId ?? undefined, selected_feature: selectedFeature?.id, selected_file: codeInspector?.details.node.path, selected_finding: codeInspector?.finding?.id, selected_range: codeInspector?.finding?.primary_span ? [codeInspector.finding.primary_span.start_line, codeInspector.finding.primary_span.end_line ?? codeInspector.finding.primary_span.start_line] : undefined, current_flow: page === "flow" ? flowSeed : undefined }} configuration={aiSettings.apiKey ? { provider: aiSettings.provider, api_key: aiSettings.apiKey, model: aiSettings.model } : undefined} onAction={handleUiAction} onClose={() => setAssistantOpen(false)} />}
       {paletteOpen && <CommandPalette projectId={projectId} projects={projects} features={features} onProject={id => void loadProject(id)} onAction={handleUiAction} onAssistant={() => setAssistantOpen(true)} onClose={() => setPaletteOpen(false)} />}
       {page === "projects" && (
         <ProjectsPage
@@ -1282,7 +1287,7 @@ export default function App() {
           }
         />
       )}
-      {page === "search" && projectId && <HybridSearchPage key={"HybridSearchPage:" + projectId} projectId={projectId} onInspect={id => void inspectCode(id)} onFocus={id => { setPage("map"); void navigateTo(id); }} />}
+      {page === "search" && projectId && <HybridSearchPage configuration={aiSettings.apiKey ? { provider: aiSettings.provider, api_key: aiSettings.apiKey } : undefined} key={"HybridSearchPage:" + projectId} projectId={projectId} onInspect={id => void inspectCode(id)} onFocus={id => { setPage("map"); void navigateTo(id); }} />}
       {page === "map" && (
         <section className="workspace">
           <aside className="explorer">
@@ -1615,7 +1620,7 @@ export default function App() {
                   />
                 )}
                 {tab === "impact" && (
-                  <pre>{JSON.stringify(impact, null, 2)}</pre>
+                  <ImpactView result={impact} onNavigate={id => void navigateTo(id)} />
                 )}
                 {tab === "ai" && (
                   <div className="ai">
@@ -2556,7 +2561,7 @@ export function FeatureDetail({
                 Générer la documentation
               </button>
               {featureDocumentation && (
-                <pre>{JSON.stringify(featureDocumentation, null, 2)}</pre>
+                <KnowledgeDocument value={featureDocumentation} />
               )}
             </div>
           )}
@@ -2625,7 +2630,7 @@ export function FeatureDetail({
               {portPlan && (
                 <details>
                   <summary>Plan détaillé</summary>
-                  <pre>{JSON.stringify(portPlan, null, 2)}</pre>
+                  <KnowledgeDocument value={portPlan} />
                 </details>
               )}
               {generatedFiles.length > 0 && (
@@ -2812,7 +2817,7 @@ export function LibraryPage({
                 <div className="card-actions">
                   <details>
                     <summary>FeatureSpec</summary>
-                    <pre>{JSON.stringify(entry.spec, null, 2)}</pre>
+                    <KnowledgeDocument value={entry.spec} />
                   </details>
                   <button
                     className="danger"

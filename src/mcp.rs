@@ -498,7 +498,9 @@ pub(crate) fn call_tool(
         "atlas_get_test_plan" => {
             let (id, graph) = project_graph(repository, args)?;
             Ok(json!(crate::intelligence::cached_test_plan(
-                repository, &id, &graph,
+                repository,
+                &id,
+                &graph,
                 &repository.list_features(&id)?,
                 args.get("feature_id").and_then(Value::as_str)
             )?))
@@ -516,6 +518,7 @@ pub(crate) fn call_tool(
         "atlas_get_git_diff" | "atlas_review_diff" => {
             let (id, graph) = project_graph(repository, args)?;
             Ok(json!(crate::intelligence::git_diff(
+                &id,
                 &graph,
                 &repository.list_features(&id)?,
                 args.get("base").and_then(Value::as_str),

@@ -15,6 +15,7 @@ export type DirectoryListing = {
 export type AiProvider = "openai" | "mistral" | "openrouter";
 export type AiSettings = { provider: AiProvider; apiKey: string; model: string };
 export type Page =
+  | "dependencies"
   | "tests" | "estimate" | "git"
   | "projects"
   | "map"

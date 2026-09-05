@@ -16,6 +16,10 @@ use serde_json::{Value, json};
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/api/projects/{id}/evidence/verify", post(verify_evidence))
+        .route("/api/projects/{id}/dependencies", get(dependencies))
+        .route("/api/projects/{id}/intelligence/embeddings", post(neural_index))
+        .route("/api/projects/{id}/intelligence/semantic-search", post(neural_search))
         .route("/api/assistant/tools", get(|| async { Json(json!({"tools": crate::assistant_tools::TOOLS.iter().map(|(name,_)|name).collect::<Vec<_>>()})) }))
         .route("/api/projects/{id}/source", get(source_file))
         .route("/api/projects/{id}/intelligence/search", get(search))
@@ -137,11 +141,12 @@ struct AskInput {
     #[serde(default)]
     context: UiContext,
     configuration: Option<crate::ai::provider::AiProviderConfig>,
+    embedding_configuration: Option<crate::ai::provider::AiProviderConfig>,
 }
 async fn ask(
     State(state): State<AppState>,
     Path((id, conversation)): Path<(String, String)>,
-    Json(input): Json<AskInput>,
+    Json(mut input): Json<AskInput>,
 ) -> ApiResult<Json<Value>> {
     let history = state.repository.conversation_messages(&id, &conversation)?;
     let ai = if let Some(config) = input.configuration {
@@ -151,14 +156,46 @@ async fn ask(
     } else {
         state.ai.clone()
     };
-    let response = AgentOrchestrator::respond(
-        &state.repository,
-        &id,
-        &input.question,
-        &input.context,
-        &history,
-        ai.as_ref(),
-    )
+    let report = |stage: &str| {
+        let _ = state
+            .events
+            .send(crate::api::state::AnalysisEvent::AssistantActivity {
+                project_id: id.clone(),
+                conversation_id: conversation.clone(),
+                stage: stage.into(),
+            });
+    };
+    let neural = input.embedding_configuration.is_some();
+    if let Some(config) = input.embedding_configuration {
+        report("Recherche hybride avec les embeddings neuronaux");
+        let provider = crate::embeddings::RemoteEmbeddings::new(config)?;
+        input.context.retrieval_nodes =
+            crate::embeddings::hybrid_search(&state.repository, &id, &input.question, &provider)
+                .await?
+                .into_iter()
+                .take(16)
+                .map(|c| c.node.id)
+                .collect();
+    }
+    let preliminary_tools = if neural {
+        vec![crate::assistant::ToolCall {
+            tool: "neural_hybrid_search".into(),
+            status: "completed".into(),
+            summary: "Recherche neuronale combinée aux scores lexicaux et symboliques.".into(),
+        }]
+    } else {
+        vec![]
+    };
+    let response = AgentOrchestrator::run(crate::assistant::AssistantRequest {
+        repo: &state.repository,
+        project: &id,
+        question: &input.question,
+        context: &input.context,
+        history: &history,
+        ai: ai.as_ref(),
+        observer: Some(&report),
+        preliminary_tools,
+    })
     .await
     .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
     state
@@ -181,7 +218,9 @@ async fn test_plan(
             .load(&id)?
             .ok_or_else(|| anyhow::anyhow!("project not found"))?;
         Ok(json!(crate::intelligence::cached_test_plan(
-            &repo, &id, &graph,
+            &repo,
+            &id,
+            &graph,
             &repo.list_features(&id)?,
             input.feature_id.as_deref()
         )?))
@@ -228,6 +267,7 @@ async fn diff(
             .load(&id)?
             .ok_or_else(|| anyhow::anyhow!("project not found"))?;
         Ok(json!(crate::intelligence::git_diff(
+            &id,
             &graph,
             &repo.list_features(&id)?,
             input.base.as_deref().filter(|s| !s.is_empty()),
@@ -256,4 +296,77 @@ async fn source_file(
         node.start_line = Some(start); node.end_line = Some(end);
         Ok(json!({"node":node,"source":text,"incoming":graph.incoming_edges(&node.id),"outgoing":graph.outgoing_edges(&node.id)}))
     }).await
+}
+
+#[derive(Deserialize)]
+struct EmbeddingInput {
+    configuration: crate::ai::provider::AiProviderConfig,
+    query: Option<String>,
+}
+async fn neural_index(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<EmbeddingInput>,
+) -> ApiResult<Json<Value>> {
+    let provider = crate::embeddings::RemoteEmbeddings::new(input.configuration)?;
+    Ok(Json(json!(
+        crate::embeddings::index(&state.repository, &id, &provider).await?
+    )))
+}
+async fn neural_search(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<EmbeddingInput>,
+) -> ApiResult<Json<Value>> {
+    let provider = crate::embeddings::RemoteEmbeddings::new(input.configuration)?;
+    let query = input
+        .query
+        .ok_or_else(|| ApiError(StatusCode::BAD_REQUEST, "Question requise".into()))?;
+    Ok(Json(
+        json!({"items":crate::embeddings::hybrid_search(&state.repository,&id,&query,&provider).await?}),
+    ))
+}
+
+async fn dependencies(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let repo = state.repository.clone();
+    blocking(move || {
+        let graph = repo
+            .load(&id)?
+            .ok_or_else(|| anyhow::anyhow!("project not found"))?;
+        Ok(json!(crate::dependencies::inventory(&graph)))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct EvidenceInput {
+    node_id: String,
+    source_hash: String,
+    start_line: usize,
+    end_line: usize,
+}
+async fn verify_evidence(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<EvidenceInput>,
+) -> ApiResult<Json<Value>> {
+    let graph = state
+        .repository
+        .load(&id)?
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "Projet introuvable".into()))?;
+    let node = graph
+        .find_node(&input.node_id)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "Symbole introuvable".into()))?;
+    let current = crate::retrieval::source(&graph, node);
+    if !current.is_some_and(|(text, start, end)| {
+        crate::retrieval::hash(&text) == input.source_hash
+            && start == input.start_line
+            && end == input.end_line
+    }) {
+        return Err(ApiError(StatusCode::CONFLICT,"Cette preuve a changé depuis la réponse. Relancez l’analyse et posez de nouveau la question.".into()));
+    }
+    Ok(Json(json!({"verified":true})))
 }

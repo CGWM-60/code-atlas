@@ -5,3 +5,5 @@
 /*.sqlite
 /graphify-out
 /.playwright-cli
+
+/output/playwright/

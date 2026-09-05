@@ -172,6 +172,8 @@ fn git_diff_is_read_only_and_rejects_option_injection() {
         );
     };
     run(&["init"]);
+    let unusual = "écran \"login\".ts";
+    fs::write(dir.path().join(unusual), "export const state = 1;\n").unwrap();
     run(&["add", "."]);
     run(&[
         "-c",
@@ -187,9 +189,11 @@ fn git_diff_is_read_only_and_rejects_option_injection() {
         "export function login() { return false; }\n",
     )
     .unwrap();
+    fs::write(dir.path().join(unusual), "export const state = 2;\n").unwrap();
     let before = fs::read(dir.path().join(".git/index")).unwrap();
-    let diff = git_diff(&analysis.graph, &[], None, None).unwrap();
-    assert_eq!(diff.files.len(), 1);
+    let diff = git_diff("p", &analysis.graph, &[], None, None).unwrap();
+    assert_eq!(diff.files.len(), 2);
+    assert!(diff.files.iter().any(|file| file.path == unusual));
     assert_eq!(diff.files[0].path, "auth.ts");
     assert!(
         diff.files[0]
@@ -198,7 +202,7 @@ fn git_diff_is_read_only_and_rejects_option_injection() {
             .any(|l| l.kind == "added" && l.new_line == Some(1))
     );
     assert_eq!(fs::read(dir.path().join(".git/index")).unwrap(), before);
-    assert!(git_diff(&analysis.graph, &[], Some("--output=/tmp/no"), None).is_err());
+    assert!(git_diff("p", &analysis.graph, &[], Some("--output=/tmp/no"), None).is_err());
 }
 #[test]
 fn sqlite_upgrade_preserves_projects_and_conversations_after_restart() {
@@ -318,24 +322,218 @@ fn documentation_cache_invalidates_on_body_only_edits() {
 
 #[tokio::test]
 async fn provider_can_request_internal_tools_with_bounded_evidence() {
- use code_atlas::ai::{AiService,provider::{AiProvider,StructuredOutputRequest,AiDocumentationError}};
- use async_trait::async_trait;
- use serde_json::{json,Value};
- use std::sync::{Arc,atomic::{AtomicUsize,Ordering}};
- struct Provider { node: String, calls: AtomicUsize }
- #[async_trait] impl AiProvider for Provider {
-  async fn answer(&self,_:&str,_:&str)->anyhow::Result<String>{unreachable!()}
-  async fn generate_structured(&self,request:StructuredOutputRequest<'_>)->Result<Value,AiDocumentationError>{
-   if request.purpose=="assistant_tools" {
-    if self.calls.fetch_add(1,Ordering::SeqCst)==0{return Ok(json!({"done":false,"calls":[{"tool":"get_source","arguments_json":json!({"node_id":self.node}).to_string()}]}));}
-    return Ok(json!({"done":true,"calls":[]}));
-   }
-   assert!(request.input.chars().count().div_ceil(4)<=12000);
-   Ok(json!({"answer":"La source de login est disponible dans auth.ts.","citation_indices":[0]}))
-  }
- }
- let(_dir,repo,analysis)=setup();let node=analysis.graph.nodes.iter().find(|n|n.name=="login").unwrap();
- let service=AiService::new(Arc::new(Provider{node:node.id.clone(),calls:AtomicUsize::new(0)}));
- let answer=AgentOrchestrator::respond(&repo,"p","Explique login",&UiContext::default(),&[],Some(&service)).await.unwrap();
- assert!(answer.tool_calls.iter().any(|t|t.tool=="get_source"&&t.status=="completed"));assert!(!answer.citations.is_empty());assert!(answer.uncertain);
+    use async_trait::async_trait;
+    use code_atlas::ai::{
+        AiService,
+        provider::{AiDocumentationError, AiProvider, StructuredOutputRequest},
+    };
+    use serde_json::{Value, json};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    struct Provider {
+        node: String,
+        calls: AtomicUsize,
+    }
+    #[async_trait]
+    impl AiProvider for Provider {
+        async fn answer(&self, _: &str, _: &str) -> anyhow::Result<String> {
+            unreachable!()
+        }
+        async fn generate_structured(
+            &self,
+            request: StructuredOutputRequest<'_>,
+        ) -> Result<Value, AiDocumentationError> {
+            if request.purpose == "assistant_rerank" {
+                return Ok(json!({"node_ids":[self.node]}));
+            }
+            if request.purpose == "assistant_tools" {
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Ok(
+                        json!({"done":false,"calls":[{"tool":"get_source","arguments_json":json!({"node_id":self.node}).to_string()}]}),
+                    );
+                }
+                return Ok(json!({"done":true,"calls":[]}));
+            }
+            assert!(request.input.chars().count().div_ceil(4) <= 12000);
+            Ok(
+                json!({"answer":"La source de login est disponible dans auth.ts.","citation_indices":[0]}),
+            )
+        }
+    }
+    let (_dir, repo, analysis) = setup();
+    let node = analysis
+        .graph
+        .nodes
+        .iter()
+        .find(|n| n.name == "login")
+        .unwrap();
+    let service = AiService::new(Arc::new(Provider {
+        node: node.id.clone(),
+        calls: AtomicUsize::new(0),
+    }));
+    let answer = AgentOrchestrator::respond(
+        &repo,
+        "p",
+        "Explique login",
+        &UiContext::default(),
+        &[],
+        Some(&service),
+    )
+    .await
+    .unwrap();
+    assert!(
+        answer
+            .tool_calls
+            .iter()
+            .any(|t| t.tool == "get_source" && t.status == "completed")
+    );
+    assert!(!answer.citations.is_empty());
+    assert!(answer.uncertain);
+}
+
+#[tokio::test]
+async fn neural_embeddings_reuse_hashes_and_reject_stale_vectors() {
+    use async_trait::async_trait;
+    use code_atlas::embeddings::{NeuralEmbeddingProvider, index, normalize, search};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct Embedder(AtomicUsize);
+    #[async_trait]
+    impl NeuralEmbeddingProvider for Embedder {
+        fn version(&self) -> String {
+            "test-neural-v1".into()
+        }
+        async fn embed(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+            self.0.fetch_add(texts.len(), Ordering::SeqCst);
+            Ok(texts.iter().map(|_| vec![1.0, 0.5]).collect())
+        }
+    }
+    let (dir, repo, analysis) = setup();
+    let provider = Embedder(AtomicUsize::new(0));
+    let first = index(&repo, "p", &provider).await.unwrap();
+    assert!(first.updated > 0);
+    let second = index(&repo, "p", &provider).await.unwrap();
+    assert_eq!(second.updated, 0);
+    assert_eq!(second.reused, first.updated);
+    assert_eq!(provider.0.load(Ordering::SeqCst), first.updated);
+    let hits = search(&repo, "p", "login", &provider).await.unwrap();
+    assert!(!hits.is_empty());
+    fs::write(dir.path().join("auth.ts"), "// deleted code\n").unwrap();
+    let updated = ProjectAnalyzer.analyze(dir.path()).unwrap();
+    repo.save("p", &updated).unwrap();
+    let hits = search(&repo, "p", "login", &provider).await.unwrap();
+    assert!(hits.is_empty());
+    assert!(normalize(vec![f32::NAN]).is_err());
+    assert!(normalize(vec![0.0, 0.0]).is_err());
+    repo.delete_project("p").unwrap();
+    assert!(
+        repo.neural_records("p", "test-neural-v1")
+            .unwrap()
+            .is_empty()
+    );
+    drop(analysis);
+}
+#[test]
+fn dependency_inventory_reads_manifests_without_executing_packages() {
+    let (dir, _repo, analysis) = setup();
+    fs::write(dir.path().join("package.json"),r#"{"dependencies":{"react":"^19","shared":"workspace:*"},"devDependencies":{"vitest":"^4"}}"#).unwrap();
+    fs::write(
+        dir.path().join("composer.json"),
+        r#"{"require":{"symfony/mailer":"^7"}}"#,
+    )
+    .unwrap();
+    fs::write(dir.path().join("Cargo.toml"),"[package]\nname='fixture'\nversion='0.1.0'\n[dependencies]\nserde='1'\nlocal={path='../local'}\n").unwrap();
+    fs::write(dir.path().join("go.mod"),"module example.org/app\nrequire (\n example.org/dependency v1.2.3\n example.org/indirect v1.0.0 // indirect\n)\n").unwrap();
+    fs::write(
+        dir.path().join("requirements.txt"),
+        "requests>=2.0\npytest==8.0\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("pubspec.yaml"),
+        "name: fixture\ndependencies:\n  http: ^1.0.0\n",
+    )
+    .unwrap();
+    let value = code_atlas::dependencies::inventory(&analysis.graph);
+    for name in [
+        "react",
+        "shared",
+        "symfony/mailer",
+        "serde",
+        "local",
+        "example.org/dependency",
+        "requests",
+        "http",
+    ] {
+        assert!(
+            value.items.iter().any(|d| d.name == name),
+            "missing {name}: {:?}",
+            value.warnings
+        );
+    }
+    assert!(
+        value
+            .items
+            .iter()
+            .find(|d| d.name == "local")
+            .unwrap()
+            .first_party
+    );
+    assert!(
+        !value
+            .items
+            .iter()
+            .find(|d| d.name == "example.org/indirect")
+            .unwrap()
+            .direct
+    );
+    assert!(
+        value
+            .items
+            .iter()
+            .all(|d| d.security.contains("Non évaluée"))
+    );
+}
+
+#[test]
+fn taint_propagates_arguments_on_resolved_calls_and_preserves_exact_spans() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("entry.ts"),"import { forward } from './sink';\nexport function handle(req: Request) {\n const value = req.query.value;\n forward(value);\n}\n").unwrap();
+    fs::write(
+        dir.path().join("sink.ts"),
+        "export function forward(query: string) {\n db.query(query);\n}\n",
+    )
+    .unwrap();
+    let analysis = ProjectAnalyzer.analyze(dir.path()).unwrap();
+    let candidates = code_atlas::taint::analyze(&analysis.graph);
+    let candidate = candidates
+        .iter()
+        .find(|c| c.node_ids.len() > 1)
+        .expect("cross-file candidate");
+    assert_eq!(candidate.spans.first().unwrap().path, "entry.ts");
+    assert_eq!(candidate.spans.last().unwrap().path, "sink.ts");
+    assert_eq!(candidate.spans.last().unwrap().start_line, 2);
+    assert!(
+        candidate
+            .edge_ids
+            .iter()
+            .all(|id| analysis.graph.edges.iter().any(|edge| &edge.id == id))
+    );
+    let findings = code_atlas::findings::detect_findings("p", &analysis.graph);
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.detector == "bounded_interprocedural_taint" && f.confidence < 0.5)
+    );
+    fs::write(dir.path().join("entry.ts"),"import { forward } from './sink';\nexport function handle(req: Request) {\n let value = req.query.value;\n value = 'constant';\n forward(value);\n}\n").unwrap();
+    let analysis = ProjectAnalyzer.analyze(dir.path()).unwrap();
+    assert!(code_atlas::taint::analyze(&analysis.graph).is_empty());
+}
+#[test]
+fn taint_ignores_examples_inside_string_literals() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("example.ts"),"export function documentation() {\n const example = 'exec(req.query)';\n return example;\n}\n").unwrap();
+    let analysis = ProjectAnalyzer.analyze(dir.path()).unwrap();
+    assert!(code_atlas::taint::analyze(&analysis.graph).is_empty());
 }

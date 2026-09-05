@@ -10,6 +10,11 @@ use tokio::sync::{RwLock, broadcast};
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AnalysisEvent {
+    AssistantActivity {
+        project_id: String,
+        conversation_id: String,
+        stage: String,
+    },
     AnalysisStarted {
         project_id: String,
         total_files: usize,

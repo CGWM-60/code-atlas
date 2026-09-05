@@ -28,6 +28,9 @@ pub mod watcher;
 pub use engine::{AnalysisResult, ProjectAnalyzer};
 
 pub mod assistant;
+pub mod assistant_tools;
+pub mod dependencies;
+pub mod embeddings;
 pub mod intelligence;
 pub mod retrieval;
-pub mod assistant_tools;
+pub mod taint;

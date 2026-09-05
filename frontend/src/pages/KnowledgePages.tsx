@@ -408,6 +408,7 @@ export function FindingsPage({
                 {finding.primary_span?.end_line ?? finding.end_line ?? "—"}:
                 {finding.primary_span?.end_column ?? "—"}
               </code>
+              {!!finding.evidence_spans?.length && <div className="taint-steps" aria-label="Étapes de la preuve">{finding.evidence_spans.map((span, index) => <button key={index} onClick={() => onInspect({ ...finding, primary_span: span, evidence_spans: [span] })}><b>{span.role ?? "preuve"}</b><span>{span.label}</span><code>{span.path}:{span.start_line}</code></button>)}</div>}
               {finding.evidence.length > 0 && (
                 <ul>
                   {finding.evidence.map((evidence, index) => (
@@ -418,7 +419,7 @@ export function FindingsPage({
               {finding.ai_analysis && (
                 <details>
                   <summary>Analyse IA enregistrée</summary>
-                  <pre>{finding.ai_analysis}</pre>
+                  <SavedFindingAnalysis content={finding.ai_analysis} />
                 </details>
               )}
             </div>
@@ -535,4 +536,11 @@ export function DocsPage({
       </div>
     </section>
   );
+}
+
+function SavedFindingAnalysis({ content }: { content: string }) {
+  let value: { summary?: string; risk?: string; remediation?: string[]; evidence?: string[] };
+  try { value = JSON.parse(content); } catch { return <Markdown skipHtml>{content}</Markdown>; }
+  if (!value || typeof value !== "object" || typeof value.summary !== "string") return <p>Analyse enregistrée dans un ancien format. Relancez l’explication pour obtenir une analyse structurée.</p>;
+  return <div><Markdown skipHtml>{value.summary}</Markdown>{typeof value.risk === "string" && <p>{value.risk}</p>}{Array.isArray(value.remediation) && <><h3>Remédiation</h3><ul>{value.remediation.filter(v => typeof v === "string").map((step, i) => <li key={i}>{step}</li>)}</ul></>}{Array.isArray(value.evidence) && <><h3>Preuves</h3><ul>{value.evidence.filter(v => typeof v === "string").map((step, i) => <li key={i}>{step}</li>)}</ul></>}</div>;
 }

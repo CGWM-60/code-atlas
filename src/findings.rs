@@ -788,6 +788,39 @@ pub fn detect_findings(project_id: &str, graph: &ProjectGraph) -> Vec<Finding> {
             findings.push(detected);
         }
     }
+    for candidate in crate::taint::analyze(graph) {
+        let Some(sink) = candidate.spans.last() else {
+            continue;
+        };
+        if let Some(existing) = findings.iter_mut().find(|finding| {
+            finding.category == FindingCategory::Security
+                && finding.primary_span.as_ref().is_some_and(|span| {
+                    span.path == sink.path && span.start_line == sink.start_line
+                })
+        }) {
+            if candidate.spans.len() > existing.evidence_spans.len() {
+                existing.evidence_spans = candidate.spans;
+                existing.edge_ids.extend(candidate.edge_ids);
+                existing.node_ids.extend(candidate.node_ids);
+                existing.node_ids.sort();
+                existing.node_ids.dedup();
+                existing.edge_ids.sort();
+                existing.edge_ids.dedup();
+                existing.evidence.push("Propagation de données heuristique sur des appels résolus ; conditions et nettoyages non prouvés.".into());
+            }
+            continue;
+        }
+        let mut detected = finding(FindingInput {
+            project_id, category: FindingCategory::Security, severity: FindingSeverity::Medium,
+            title: "Entrée externe propagée vers un appel sensible",
+            description: format!("Un chemin de propagation candidat atteint {}. Analyse heuristique bornée à quatre appels ; les alias, conditions et sanitizers ne sont pas complètement résolus.",candidate.sink),
+            evidence: vec!["Les arêtes interprocédurales existent dans ProjectGraph. La propagation des arguments et affectations reste heuristique ; aucune exploitabilité n’est affirmée.".into()],
+            node_ids: candidate.node_ids, edge_ids: candidate.edge_ids, path:Some(sink.path.clone()),start_line:Some(sink.start_line),end_line:Some(sink.end_line),detector:"bounded_interprocedural_taint",confidence:0.45,source_hash:stable_hash(&[&serde_json::to_string(&candidate.spans).unwrap_or_default()]),
+        });
+        detected.primary_span = Some(sink.clone());
+        detected.evidence_spans = candidate.spans;
+        findings.push(detected);
+    }
     findings
 }
 
