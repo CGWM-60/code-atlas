@@ -1,12 +1,16 @@
 # Code Atlas
 
-Code Atlas is a local, deterministic source-code explorer: a “map” of projects, files,
-symbols and architectural relationships. It scans a folder or Git repository, parses the
-supported languages, resolves only relationships it can justify, persists the result in
-SQLite, and exposes the map through a Rust API and a React graph UI.
+Code Atlas is a local code intelligence workspace. It connects source analysis, graphs,
+Features, findings, API exploration, documentation, tests, change estimates and Git review
+in one React application backed by Rust and SQLite. A project assistant retrieves evidence
+and opens the relevant source or workspace view through structured UI actions.
 
-The AI layer is optional. It retrieves a small graph neighborhood and exact source ranges;
-it does not replace parsing or receive the whole repository.
+Core analysis works without an API key. Optional chat, reranking and neural embeddings use
+an explicitly configured provider. Local concept vectors remain available offline and are
+not presented as neural embeddings.
+
+See [the workspace guide](docs/INTELLIGENCE_WORKSPACE.md) for workflows, API contracts,
+persistence and limits, and [the delivery report](docs/DELIVERY_REPORT.md) for validation.
 
 ## Pipeline
 
@@ -154,9 +158,16 @@ impact.
 
 ## SQLite and cache
 
-The migration creates `projects`, `files`, `nodes`, `edges`, `imports`, `modules` and
-`analysis_runs`. Source text is not stored. File SHA-256 values and graph JSON permit fast
-reopening, while in-process watcher analyses reuse unchanged AST results.
+Migrations 001–008 run idempotently when the repository opens, retaining existing projects,
+Features, findings and library data. SQLite stores graph snapshots, file hashes, durable
+AST analysis cache and versioned AI/documentation outputs. Migrations 007 and 008 add
+semantic units, conversations/messages and optional neural vectors with project-scoped
+foreign keys and cascading deletion.
+
+Semantic units and assistant citations contain redacted source excerpts in SQLite. They
+are not a substitute for the source files: citations are revalidated against paths, ranges
+and hashes. Embeddings are reused when their enriched content hash and model version
+match. Test plans and estimates use the existing hash/version-based durable cache.
 
 ## AI configuration
 
@@ -194,7 +205,9 @@ cargo clippy --all-targets --all-features -- -D warnings
 cd frontend
 npm run lint
 npm run build
-npm audit --omit=dev
+npm test
+npx playwright install chromium
+npm run test:e2e
 ```
 
 Fixtures under `tests/fixtures/` exercise Rust, TypeScript, PHP, Dart/Flutter, Python, Go,
@@ -211,17 +224,19 @@ resolvers, search, impact, incremental reuse, SQLite, HTTP API and mock AI retri
 - Composer PSR-4 mapping and Cargo dependency edges are not yet surfaced as dedicated graph
   edges, although Cargo workspace/package/target metadata is represented.
 - ZIP upload/extraction is not implemented; extract the archive and analyze its folder.
-- SQLite persists file hashes and graphs, but AST cache reuse across a server restart is not
-  implemented; reuse is active during the running process and watcher lifecycle.
 - The graph UI renders at most 1,500 visible nodes at once. Filters and search are the
   intended zoom mechanism for larger projects.
-- AI behavior depends on the configured provider/model and is unavailable without a key;
-  deterministic analysis, search and impact remain fully functional.
+- Provider-backed answers require a key. The global assistant also operates in local mode
+  with deterministic retrieval, source citations and view actions.
+- Estimates and taint paths are heuristic. Functional test coverage is unknown without
+  verified assertions/results. Generated Playwright files currently validate navigation.
+- Git associates diffs with the current graph; introduced/resolved findings require
+  separate analyses of both revisions and are not claimed automatically.
 - Frontend API-key persistence uses browser local storage as explicitly selected in settings;
   use Code Atlas only from its trusted local origin and clear site data to remove the key.
 
 ## Roadmap
 
-Compiler/LSP-assisted resolution, Composer PSR-4, durable per-file AST cache, ZIP import,
-semantic embeddings as a secondary retrieval layer, community clustering and richer
-database/event adapters are natural next steps.
+Compiler/LSP-assisted resolution, broader framework metadata, historical graph comparison,
+verified functional coverage and richer test generation remain areas for further work.
+See the delivery report for the exact boundaries of this implementation.

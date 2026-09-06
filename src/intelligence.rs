@@ -548,8 +548,8 @@ pub fn git_diff(
         .nodes
         .iter()
         .filter(|n| n.path.as_deref().is_some_and(|p| changed_paths.contains(p)))
-        .cloned()
         .take(200)
+        .cloned()
         .collect::<Vec<_>>();
     let affected_features = files
         .iter()

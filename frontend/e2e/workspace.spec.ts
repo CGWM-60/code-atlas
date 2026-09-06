@@ -82,7 +82,7 @@ test('analyze, graph, features, source, assistant, tests, estimate and Git form 
  await page.getByLabel('Titre de conversation').fill('Exploration auth');
  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
  await expect(page.getByLabel('Conversation', { exact: true }).locator('option:checked')).toHaveText('Exploration auth');
- for (const name of ['Sécurité', 'Qualité', 'Documentation', 'Mon code', 'Bibliothèque', 'MCP', 'Flux', 'Recherche']) { await nav.getByRole('button', { name, exact: true }).click(); await expect(page.locator('main')).toBeVisible(); await page.screenshot({ path: `../output/playwright/page-${name}.png`, fullPage: true }); }
+ for (const name of ['Sécurité', 'Qualité', 'Documentation', 'Mon code', 'Bibliothèque', 'MCP', 'Flux', 'Recherche']) { await nav.getByRole('button', { name, exact: true }).click(); await expect(page.locator('main')).toBeVisible(); if (name === 'Documentation') await expect(page.locator('.docs-toc')).toBeVisible(); await page.screenshot({ path: `../output/playwright/page-${name}.png`, fullPage: true }); }
  await page.screenshot({ path: '../output/playwright/workspace.png', fullPage: true });
  await page.getByRole('button', { name: 'Fermer l’assistant' }).click();
  await page.setViewportSize({ width: 820, height: 900 });
